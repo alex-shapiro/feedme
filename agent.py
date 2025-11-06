@@ -1,3 +1,5 @@
+import os
+import pickle
 from dataclasses import dataclass
 from typing import Any, final
 
@@ -27,12 +29,14 @@ class FeedMeAgent:
         target_kl: float = 0.5,
     ):
         super().__init__()
+
         self.n_epochs = n_epochs
         self.n_steps_per_epoch = n_steps_per_epoch
         self.n_policy_training_iters = n_policy_training_iters
         self.n_value_training_iters = n_value_training_iters
         self.clip_ratio = clip_ratio
         self.target_kl = target_kl
+        self.trained_epochs = 0
 
         # simulation env
         self.env = FeedMeEnv()
@@ -55,7 +59,7 @@ class FeedMeAgent:
         )
 
     def train(self):
-        for epoch in range(1, self.n_epochs + 1):
+        for epoch in range(self.trained_epochs + 1, self.n_epochs + 1):
             print(f"\nEpoch {epoch}")
 
             # build rollouts
@@ -96,6 +100,7 @@ class FeedMeAgent:
 
             if epoch % 10 == 0:
                 self.evaluate(n_episodes=100)
+                self.save_model(f"checkpoints/e{epoch}.pk")
 
     def update(self):
         batch_a = self.trajectories_a.get_batch()
@@ -195,6 +200,69 @@ class FeedMeAgent:
         print(f"A reward: mean {mx.mean(ep_rewards_a):.4f} +/- {mx.std(ep_rewards_a)}")
         print(f"B reward: mean {mx.mean(ep_rewards_b):.4f} +/- {mx.std(ep_rewards_b)}")
 
+    def save_model(self, path: str):
+        os.makedirs("checkpoints/", exist_ok=True)
+
+        # Save model parameters and optimizer states
+        checkpoint = {
+            "model_state": {
+                "p_net": dict(self.model.p_net.parameters()),
+                "v_net": dict(self.model.v_net.parameters()),
+            },
+            "policy_optimizer_state": self.policy_optimizer.state,
+            "value_optimizer_state": self.value_optimizer.state,
+        }
+
+        with open(path, "wb") as f:
+            pickle.dump(checkpoint, f)
+        print(f"Model saved to {path}")
+
+    def load_model(self, path: str):
+        with open(path, "rb") as f:
+            checkpoint = pickle.load(f)
+
+        # Load model parameters
+        self.model.p_net.update(checkpoint["model_state"]["p_net"])
+        self.model.v_net.update(checkpoint["model_state"]["v_net"])
+
+        # Load optimizer states
+        self.policy_optimizer.state = checkpoint["policy_optimizer_state"]
+        self.value_optimizer.state = checkpoint["value_optimizer_state"]
+        self.seed = checkpoint["seed"]
+
+        print(f"Model loaded from {path}")
+
+    def load_latest_model(self):
+        checkpoint_dir = "checkpoints/"
+        if not os.path.exists(checkpoint_dir):
+            raise FileNotFoundError(
+                f"Checkpoint directory '{checkpoint_dir}' not found"
+            )
+
+        model_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pk")]
+
+        if not model_files:
+            raise FileNotFoundError(f"No checkpoint files found in '{checkpoint_dir}'")
+
+        # Sort by modification time to get the latest
+        model_files.sort(
+            key=lambda f: os.path.getmtime(os.path.join(checkpoint_dir, f)),
+            reverse=True,
+        )
+
+        latest_checkpoint = os.path.join(checkpoint_dir, model_files[0])
+        latest_filename = model_files[0]
+
+        # Extract epoch number from filename (e.g., "e5.pk" -> 5)
+        try:
+            epoch_str = latest_filename.replace(".pk", "").replace("e", "")
+            self.trained_epochs = int(epoch_str)
+        except ValueError:
+            # If filename doesn't follow expected format, default to 0
+            self.trained_epochs = 0
+
+        self.load_model(latest_checkpoint)
+
 
 @dataclass
 class PolicyInfo:
@@ -204,6 +272,6 @@ class PolicyInfo:
 
 
 if __name__ == "__main__":
-    agent = FeedMeAgent(n_epochs=100)
+    agent = FeedMeAgent(n_epochs=1000)
     agent.train()
     agent.evaluate(n_episodes=100)
