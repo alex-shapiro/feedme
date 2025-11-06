@@ -1,4 +1,7 @@
 from enum import Enum
+from typing import final
+
+import mlx.core as mx
 
 
 class Action(Enum):
@@ -8,22 +11,31 @@ class Action(Enum):
     Signal = 3
 
 
-class Env:
+@final
+class FeedMeEnv:
     def __init__(self):
-        self.t = 0
         self.timeout = 30
+        self.reset()
 
     def reset(self):
         self.t = 0
+        self.state = mx.zeros([self.timeout, 2], dtype=mx.int8) - 1
 
-    def step(self, action_a: int, action_b: int) -> tuple[tuple[int, int], bool]:
+    def step(
+        self,
+        action_a: int,
+        action_b: int,
+    ) -> tuple[mx.array, tuple[int, int], bool]:
         assert self.t < self.timeout
+        self.state[self.t, 0] = action_a
+        self.state[self.t, 0] = action_b
+
         reward_a = self.get_reward(action_a, action_b)
         reward_b = self.get_reward(action_b, action_a)
         self.t += 1
         reward = (reward_a, reward_b)
         done = self.t == self.timeout
-        return reward, done
+        return self.state, reward, done
 
     def get_reward(self, action_a: int, action_b: int) -> int:
         assert action_a >= 0 and action_a <= 3
