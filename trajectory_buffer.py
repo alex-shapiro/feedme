@@ -50,7 +50,6 @@ class TrajectoryBuffer:
         self.logps[self.next_index] = logp
         self.values[self.next_index] = value
         self.rewards[self.next_index] = reward
-        self.next_index = (self.next_index + 1) % self.capacity
         self.next_index += 1
 
     def push_episode_end(
@@ -77,7 +76,7 @@ class TrajectoryBuffer:
         self.advantages[range] = cumulative_sum(deltas, gamma_sign * self.lamda)
         # Return
         if truncated:
-            ep_rewards = mx.concatenate([ep_rewards, mx.array(bootstrap_value)])
+            ep_rewards = mx.concatenate([ep_rewards, mx.array([bootstrap_value])])
             self.returns[range] = cumulative_sum(ep_rewards, gamma_sign)[:-1]
         else:
             self.returns[range] = cumulative_sum(ep_rewards, gamma_sign)
@@ -94,6 +93,7 @@ class TrajectoryBuffer:
         # Add small eps to prevent division by zero
         advantages = (advantages - advantage_mean) / (advantage_std + 1e-8)
         self.next_index = 0
+        self.episode_start_index = 0
         return TrajectoryBatch(
             obs=self.obs,
             actions=self.actions,

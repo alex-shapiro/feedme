@@ -15,6 +15,7 @@ class Categorical:
         """Initialize categorical distribution from logits"""
         self.logits = logits
         self.log_probs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+        self.probs = mx.exp(self.log_probs)
 
     def sample(self) -> mx.array:
         """Sample from the categorical distribution"""

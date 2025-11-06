@@ -27,8 +27,8 @@ class PolicyNet(nn.Module):
             kernel_size=3,
             padding=1,
         )
-        # Flattened 32 * 30 * 2 = 1920
-        self.linear1 = nn.Linear(1920, 64)
+        # Flattened 32 * 30 = 960
+        self.linear1 = nn.Linear(960, 64)
         self.linear2 = nn.Linear(64, 4)
 
     @override
@@ -70,8 +70,8 @@ class ValueNet(nn.Module):
             kernel_size=3,
             padding=1,
         )
-        # Flattened 32 * 30 * 2 = 1920
-        self.linear1 = nn.Linear(1920, 64)
+        # Flattened 32 * 30 = 960
+        self.linear1 = nn.Linear(960, 64)
         self.linear2 = nn.Linear(64, 1)
 
     @override
@@ -92,6 +92,9 @@ class EaterNet(nn.Module):
         self.v_net = ValueNet()
 
     def step(self, obs: mx.array) -> tuple[int, float, float]:
+        # Add batch dimension if missing
+        if obs.ndim == 2:
+            obs = mx.expand_dims(obs, axis=0)
         policy = self.p_net.policy(obs)
         action = policy.sample()
         logp = policy.log_prob(action)
@@ -99,4 +102,7 @@ class EaterNet(nn.Module):
         return (int(action.item()), float(logp.item()), float(value.item()))
 
     def value(self, obs: mx.array) -> float:
+        # Add batch dimension if missing
+        if obs.ndim == 2:
+            obs = mx.expand_dims(obs, axis=0)
         return float(self.v_net(obs))

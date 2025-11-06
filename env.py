@@ -31,7 +31,7 @@ class FeedMeEnv:
 
     def reset(self) -> tuple[mx.array, mx.array]:
         self.t = 0
-        self.obs = mx.zeros([self.timeout, 2], dtype=mx.int8) - 1
+        self.obs = mx.zeros([self.timeout, 2], dtype=mx.float32) - 1.0
         return self.observation()
 
     def observation(self) -> tuple[mx.array, mx.array]:
@@ -45,8 +45,8 @@ class FeedMeEnv:
         action_b: int,
     ) -> tuple[tuple[mx.array, mx.array], tuple[int, int], bool]:
         assert self.t < self.timeout
-        self.obs[self.t, 0] = action_a
-        self.obs[self.t, 0] = action_b
+        self.obs[self.t, 0] = float(action_a)
+        self.obs[self.t, 0] = float(action_b)
 
         reward_a = self.get_reward(action_a, action_b)
         reward_b = self.get_reward(action_b, action_a)

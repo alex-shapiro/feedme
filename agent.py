@@ -24,7 +24,7 @@ class FeedMeAgent:
         clip_ratio: float = 0.2,
         policy_lr: float = 1e-3,
         value_lr: float = 1e-3,
-        target_kl: float = 0.05,
+        target_kl: float = 0.5,
     ):
         super().__init__()
         self.n_epochs = n_epochs
@@ -172,8 +172,15 @@ class FeedMeAgent:
             obs_a, obs_b = self.env.reset()
             done = False
             while not done:
-                action_a = int(self.model.p_net.policy(obs_a).sample().item())
-                action_b = int(self.model.p_net.policy(obs_b).sample().item())
+                # Add batch dimension for policy network
+                obs_a_batch = (
+                    mx.expand_dims(obs_a, axis=0) if obs_a.ndim == 2 else obs_a
+                )
+                obs_b_batch = (
+                    mx.expand_dims(obs_b, axis=0) if obs_b.ndim == 2 else obs_b
+                )
+                action_a = int(self.model.p_net.policy(obs_a_batch).sample().item())
+                action_b = int(self.model.p_net.policy(obs_b_batch).sample().item())
                 (obs_a, obs_b), (reward_a, reward_b), done = self.env.step(
                     action_a, action_b
                 )
