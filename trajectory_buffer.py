@@ -14,6 +14,8 @@ class TrajectoryBuffer:
     ):
         # capacity
         self.capacity = capacity
+        # index for the next insert
+        self.next_index = 0
         # environment observations
         self.obs = mx.zeros([capacity, 30, 2], dtype=mx.float32)
         # predicted actions
@@ -32,18 +34,13 @@ class TrajectoryBuffer:
         self.gamma = gamma
         # value estimation discount
         self.lamda = lamda
-        # index for the next insert
-        self.next_index = 0
         # index for the start of the current episode
         self.episode_start_index = 0
-        # total insert length
-        self.inserts = 0
 
     def push(
         self,
         obs: mx.array,
         action: int,
-        action_mask: mx.array,
         logp: float,
         value: float,
         reward: float,
@@ -54,12 +51,12 @@ class TrajectoryBuffer:
         self.values[self.next_index] = value
         self.rewards[self.next_index] = reward
         self.next_index = (self.next_index + 1) % self.capacity
-        self.inserts += 1
+        self.next_index += 1
 
     def push_episode_end(
         self,
         value: float,
-        is_truncated: bool,
+        truncated: bool,
         is_self_play: bool = True,
     ):
         end = self.capacity if self.next_index == 0 else self.next_index
@@ -68,7 +65,7 @@ class TrajectoryBuffer:
         ep_values = self.values[range]
 
         # TD error
-        bootstrap_value = value if is_truncated else 0.0
+        bootstrap_value = value if truncated else 0.0
         next_values = mx.concatenate([ep_values[1:], mx.array([bootstrap_value])])
 
         # For self-play, use negative gamma because rewards alternate perspective
@@ -79,7 +76,7 @@ class TrajectoryBuffer:
         # GAE-Lambda advantage
         self.advantages[range] = cumulative_sum(deltas, gamma_sign * self.lamda)
         # Return
-        if is_truncated:
+        if truncated:
             ep_rewards = mx.concatenate([ep_rewards, mx.array(bootstrap_value)])
             self.returns[range] = cumulative_sum(ep_rewards, gamma_sign)[:-1]
         else:
@@ -90,11 +87,13 @@ class TrajectoryBuffer:
 
     def get_batch(self) -> "TrajectoryBatch":
         """Sample N random elements from the trajectory buffer"""
+        assert self.next_index == self.capacity
         advantages = self.advantages
         advantage_mean = mx.mean(advantages)
         advantage_std = mx.std(advantages)
         # Add small eps to prevent division by zero
         advantages = (advantages - advantage_mean) / (advantage_std + 1e-8)
+        self.next_index = 0
         return TrajectoryBatch(
             obs=self.obs,
             actions=self.actions,
@@ -104,7 +103,7 @@ class TrajectoryBuffer:
         )
 
     def __len__(self):
-        return min(self.inserts, self.capacity)
+        return self.next_index
 
 
 @dataclass
@@ -114,6 +113,15 @@ class TrajectoryBatch:
     advantages: mx.array
     logps: mx.array
     returns: mx.array
+
+    def concat(self, other: "TrajectoryBatch") -> "TrajectoryBatch":
+        return TrajectoryBatch(
+            obs=mx.concat([self.obs, other.obs]),
+            actions=mx.concat([self.actions, other.actions]),
+            advantages=mx.concat([self.advantages, other.advantages]),
+            logps=mx.concat([self.logps, other.logps]),
+            returns=mx.concat([self.returns, other.returns]),
+        )
 
 
 def cumulative_sum(x: mx.array, gamma: float) -> mx.array:
