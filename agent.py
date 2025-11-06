@@ -108,8 +108,12 @@ class FeedMeAgent:
         batch = batch_a.concat(batch_b)
         assert len(batch.obs) == 1024
 
+        policy_losses = []
+        value_losses = []
+
         for i in range(self.n_policy_training_iters):
-            _loss, policy_info, grads = self.compute_policy_loss_and_grads(batch)
+            policy_loss, policy_info, grads = self.compute_policy_loss_and_grads(batch)
+            policy_losses.append(policy_loss)
             self.policy_optimizer.update(self.model.p_net, grads)
             if policy_info.approximate_kl > 1.5 * self.target_kl:
                 print(
@@ -118,9 +122,19 @@ class FeedMeAgent:
                 break
 
         for i in range(self.n_value_training_iters):
-            _loss, grads = self.compute_value_loss_and_grads(batch)
+            value_loss, grads = self.compute_value_loss_and_grads(batch)
             self.value_optimizer.update(self.model.v_net, grads)
             mx.eval(self.model.v_net.parameters())
+            value_losses.append(value_loss)
+
+        policy_losses = mx.array(policy_losses)
+        value_losses = mx.array(value_losses)
+        print(
+            f"Policy loss: {mx.mean(policy_losses):.3f} +/- {mx.mean(policy_losses):.3f}"
+        )
+        print(
+            f"Value loss: {mx.mean(value_losses):.3f} +/- {mx.mean(value_losses):.3f}"
+        )
 
     def compute_policy_loss_and_grads(
         self, batch: TrajectoryBatch
@@ -228,7 +242,6 @@ class FeedMeAgent:
         # Load optimizer states
         self.policy_optimizer.state = checkpoint["policy_optimizer_state"]
         self.value_optimizer.state = checkpoint["value_optimizer_state"]
-        self.seed = checkpoint["seed"]
 
         print(f"Model loaded from {path}")
 
@@ -273,5 +286,6 @@ class PolicyInfo:
 
 if __name__ == "__main__":
     agent = FeedMeAgent(n_epochs=1000)
+    agent.load_latest_model()
     agent.train()
     agent.evaluate(n_episodes=100)
