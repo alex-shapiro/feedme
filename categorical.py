@@ -30,3 +30,8 @@ class Categorical:
             batch_size = value.shape[0]
             batch_indices = mx.arange(batch_size)
             return self.log_probs[batch_indices, value]
+
+    def entropy(self) -> mx.array:
+        """Compute distribution entropy: -sum(p * log(p))"""
+        safe_probs = mx.clip(self.probs, 1e-10, 1.0)
+        return -(self.probs * mx.log(safe_probs)).sum(axis=-1)

@@ -103,10 +103,8 @@ class FeedMeAgent:
         batch = batch_a.concat(batch_b)
         assert len(batch.obs) == 1024
 
-        policy_loss_val = 0.0
-        policy_grad_norm = 0.0
         for i in range(self.n_policy_training_iters):
-            loss, policy_info, grads = self.policy_loss(batch)
+            _loss, policy_info, grads = self.compute_policy_loss_and_grads(batch)
             self.policy_optimizer.update(self.model.p_net, grads)
             if policy_info.approximate_kl > 1.5 * self.target_kl:
                 print(
@@ -115,17 +113,55 @@ class FeedMeAgent:
                 break
 
         for i in range(self.n_value_training_iters):
-            loss, grads = self.value_loss(batch)
+            _loss, grads = self.compute_value_loss_and_grads(batch)
             self.value_optimizer.update(self.model.v_net, grads)
             mx.eval(self.model.v_net.parameters())
 
-    def policy_loss(
+    def compute_policy_loss_and_grads(
         self, batch: TrajectoryBatch
-    ) -> tuple[float, "PolicyInfo", Gradients]:
-        pass
+    ) -> tuple[mx.array, "PolicyInfo", Gradients]:
+        def loss_fn(params):
+            self.model.p_net.update(params)
+            return self.policy_loss(batch)
 
-    def value_loss(self, batch: TrajectoryBatch) -> tuple[float, Gradients]:
-        pass
+        (loss, policy_info), grads = mx.value_and_grad(loss_fn, argnums=0)(
+            self.model.p_net.trainable_parameters()
+        )
+
+        return loss, policy_info, grads
+
+    def policy_loss(self, batch: TrajectoryBatch) -> tuple[mx.array, "PolicyInfo"]:
+        policy, logps = self.model.p_net(batch.obs, batch.actions)
+        assert logps is not None
+        ratio = mx.exp(logps - batch.logps)
+        min = 1 - self.clip_ratio
+        max = 1 + self.clip_ratio
+        clipped_adv = mx.clip(ratio, min, max) * batch.advantages
+        adv = ratio * batch.advantages
+        policy_loss = -mx.minimum(adv, clipped_adv).mean()
+        policy_info = PolicyInfo(
+            approximate_kl=float((batch.logps - logps).mean()),
+            mean_entropy=float(policy.entropy().mean()),
+            clipped_fraction=float(
+                ((ratio > max) | (ratio < min)).astype(mx.float32).mean()
+            ),
+        )
+        return policy_loss, policy_info
+
+    def compute_value_loss_and_grads(
+        self, batch: TrajectoryBatch
+    ) -> tuple[mx.array, Gradients]:
+        def loss_fn(params):
+            self.model.v_net.update(params)
+            return self.value_loss(batch)
+
+        return mx.value_and_grad(loss_fn, argnums=0)(
+            self.model.v_net.trainable_parameters()
+        )
+
+    def value_loss(self, batch: TrajectoryBatch) -> mx.array:
+        values = self.model.v_net(batch.obs)
+        return mx.mean((values - batch.returns) ** 2)
 
     def evaluate(self, n_episodes: int):
         ep_rewards_a = []
