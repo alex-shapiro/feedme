@@ -56,7 +56,6 @@ class TrajectoryBuffer:
         self,
         value: float,
         truncated: bool,
-        is_self_play: bool = True,
     ):
         end = self.capacity if self.next_index == 0 else self.next_index
         range = slice(self.episode_start_index, end)
@@ -66,20 +65,16 @@ class TrajectoryBuffer:
         # TD error
         bootstrap_value = value if truncated else 0.0
         next_values = mx.concatenate([ep_values[1:], mx.array([bootstrap_value])])
-
-        # For self-play, use negative gamma because rewards alternate perspective
-        # For non-self-play, use positive gamma because we only track our own rewards
-        gamma_sign = -self.gamma if is_self_play else self.gamma
-        deltas = ep_rewards + gamma_sign * next_values - ep_values
+        deltas = ep_rewards + self.gamma * next_values - ep_values
 
         # GAE-Lambda advantage
-        self.advantages[range] = cumulative_sum(deltas, gamma_sign * self.lamda)
+        self.advantages[range] = cumulative_sum(deltas, self.gamma * self.lamda)
         # Return
         if truncated:
             ep_rewards = mx.concatenate([ep_rewards, mx.array([bootstrap_value])])
-            self.returns[range] = cumulative_sum(ep_rewards, gamma_sign)[:-1]
+            self.returns[range] = cumulative_sum(ep_rewards, self.gamma)[:-1]
         else:
-            self.returns[range] = cumulative_sum(ep_rewards, gamma_sign)
+            self.returns[range] = cumulative_sum(ep_rewards, self.gamma)
 
         # Move the episode pointer
         self.episode_start_index = self.next_index

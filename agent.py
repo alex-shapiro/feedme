@@ -286,6 +286,9 @@ class PolicyInfo:
 
 if __name__ == "__main__":
     agent = FeedMeAgent(n_epochs=1000)
-    agent.load_latest_model()
+    try:
+        agent.load_latest_model()
+    except FileNotFoundError:
+        print("No checkpoint found, starting fresh")
     agent.train()
     agent.evaluate(n_episodes=100)

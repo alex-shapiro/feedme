@@ -46,7 +46,7 @@ class FeedMeEnv:
     ) -> tuple[tuple[mx.array, mx.array], tuple[int, int], bool]:
         assert self.t < self.timeout
         self.obs[self.t, 0] = float(action_a)
-        self.obs[self.t, 0] = float(action_b)
+        self.obs[self.t, 1] = float(action_b)
 
         reward_a = self.get_reward(action_a, action_b)
         reward_b = self.get_reward(action_b, action_a)

@@ -8,3 +8,8 @@ There are 2 actors. Each turn, A and B actors decide on their actions independen
 - Signal
 
 Goal is to train agents that perform tit-for-tat behavior
+
+## Dev Log
+
+- V1: no noticeable training over time
+- V2: training leads both agents to keep their mouth open at all times (0 reward)

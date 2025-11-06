@@ -88,6 +88,7 @@ class ValueNet(nn.Module):
 
 class EaterNet(nn.Module):
     def __init__(self):
+        super().__init__()
         self.p_net = PolicyNet()
         self.v_net = ValueNet()
 
