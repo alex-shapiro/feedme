@@ -8,7 +8,6 @@ class Action(Enum):
     FeedSelf = 0
     FeedOther = 1
     OpenMouth = 2
-    Signal = 3
 
     @override
     def __repr__(self) -> str:
@@ -19,8 +18,6 @@ class Action(Enum):
                 return "FeedOther"
             case Action.OpenMouth:
                 return "OpenMouth"
-            case Action.Signal:
-                return "Signal"
 
 
 @final
@@ -56,8 +53,8 @@ class FeedMeEnv:
         return self.observation(), reward, done
 
     def get_reward(self, action_a: int, action_b: int) -> int:
-        assert action_a >= 0 and action_a <= 3
-        assert action_b >= 0 and action_b <= 3
+        assert action_a >= 0 and action_a <= 2
+        assert action_b >= 0 and action_b <= 2
         a = Action(action_a)
         b = Action(action_b)
         match a:
@@ -67,5 +64,3 @@ class FeedMeEnv:
                 return 0
             case Action.OpenMouth:
                 return 10 if b == Action.FeedOther else 0
-            case Action.Signal:
-                return 0

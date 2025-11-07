@@ -27,6 +27,9 @@ class FeedMeAgent:
         policy_lr: float = 1e-3,
         value_lr: float = 1e-3,
         target_kl: float = 0.5,
+        entropy_coef: float = 0.01,
+        initial_entropy_coef: float = 0.1,
+        entropy_coef_decay: float = 0.995,
     ):
         super().__init__()
 
@@ -36,6 +39,10 @@ class FeedMeAgent:
         self.n_value_training_iters = n_value_training_iters
         self.clip_ratio = clip_ratio
         self.target_kl = target_kl
+        self.entropy_coef = entropy_coef
+        self.initial_entropy_coef = initial_entropy_coef
+        self.entropy_coef_decay = entropy_coef_decay
+        self.current_entropy_coef = initial_entropy_coef
         self.trained_epochs = 0
 
         # simulation env
@@ -60,7 +67,7 @@ class FeedMeAgent:
 
     def train(self):
         for epoch in range(self.trained_epochs + 1, self.n_epochs + 1):
-            print(f"\nEpoch {epoch}")
+            print(f"\nEpoch {epoch} (entropy_coef={self.current_entropy_coef:.4f})")
 
             # build rollouts
             (obs_a, obs_b) = self.env.reset()
@@ -98,6 +105,11 @@ class FeedMeAgent:
 
             self.update()
 
+            # Decay entropy coefficient (curriculum learning)
+            self.current_entropy_coef = max(
+                self.entropy_coef, self.current_entropy_coef * self.entropy_coef_decay
+            )
+
             if epoch % 10 == 0:
                 self.evaluate(n_episodes=100)
                 self.save_model(f"checkpoints/e{epoch}.pk")
@@ -131,11 +143,9 @@ class FeedMeAgent:
         policy_losses = mx.array(policy_losses)
         value_losses = mx.array(value_losses)
         print(
-            f"Policy loss: {mx.mean(policy_losses):.3f} +/- {mx.mean(policy_losses):.3f}"
+            f"Policy loss: {mx.mean(policy_losses):.3f} +/- {mx.std(policy_losses):.3f}"
         )
-        print(
-            f"Value loss: {mx.mean(value_losses):.3f} +/- {mx.mean(value_losses):.3f}"
-        )
+        print(f"Value loss: {mx.mean(value_losses):.3f} +/- {mx.std(value_losses):.3f}")
 
     def compute_policy_loss_and_grads(
         self, batch: TrajectoryBatch
@@ -158,10 +168,13 @@ class FeedMeAgent:
         max = 1 + self.clip_ratio
         clipped_adv = mx.clip(ratio, min, max) * batch.advantages
         adv = ratio * batch.advantages
-        policy_loss = -mx.minimum(adv, clipped_adv).mean()
+        entropy = policy.entropy().mean()
+        policy_loss = (
+            -mx.minimum(adv, clipped_adv).mean() - self.current_entropy_coef * entropy
+        )
         policy_info = PolicyInfo(
             approximate_kl=float((batch.logps - logps).mean()),
-            mean_entropy=float(policy.entropy().mean()),
+            mean_entropy=float(entropy),
             clipped_fraction=float(
                 ((ratio > max) | (ratio < min)).astype(mx.float32).mean()
             ),
@@ -186,6 +199,8 @@ class FeedMeAgent:
     def evaluate(self, n_episodes: int):
         ep_rewards_a = []
         ep_rewards_b = []
+        actions_a = [0, 0, 0, 0]
+        actions_b = [0, 0, 0, 0]
         for i in range(n_episodes):
             ra = 0.0
             rb = 0.0
@@ -201,6 +216,8 @@ class FeedMeAgent:
                 )
                 action_a = int(self.model.p_net.policy(obs_a_batch).sample().item())
                 action_b = int(self.model.p_net.policy(obs_b_batch).sample().item())
+                actions_a[action_a] += 1
+                actions_b[action_b] += 1
                 (obs_a, obs_b), (reward_a, reward_b), done = self.env.step(
                     action_a, action_b
                 )
@@ -214,6 +231,8 @@ class FeedMeAgent:
         ep_rewards_b = mx.array(ep_rewards_b)
         print(f"A reward: mean {mx.mean(ep_rewards_a):.4f} +/- {mx.std(ep_rewards_a)}")
         print(f"B reward: mean {mx.mean(ep_rewards_b):.4f} +/- {mx.std(ep_rewards_b)}")
+        print(f"A num actions: {actions_a}")
+        print(f"A num actions: {actions_b}")
 
     def save_model(self, path: str):
         os.makedirs("checkpoints/", exist_ok=True)

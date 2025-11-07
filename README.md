@@ -13,3 +13,4 @@ Goal is to train agents that perform tit-for-tat behavior
 
 - V1: no noticeable training over time
 - V2: training leads both agents to keep their mouth open at all times (0 reward)
+- V3: remove Signal action and calculate policy loss wrt policy entropy (slight boost to value over greedy strategy, but it stops after rewards ~36)

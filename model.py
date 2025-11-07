@@ -29,7 +29,7 @@ class PolicyNet(nn.Module):
         )
         # Flattened 32 * 30 = 960
         self.linear1 = nn.Linear(960, 64)
-        self.linear2 = nn.Linear(64, 4)
+        self.linear2 = nn.Linear(64, 3)
 
     @override
     def __call__(
