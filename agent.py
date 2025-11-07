@@ -22,7 +22,7 @@ class FeedMeAgent:
         n_policy_training_iters: int = 80,
         n_value_training_iters: int = 80,
         gamma: float = 0.99,
-        lamda: float = 0.99,
+        lamda: float = 0.95,
         clip_ratio: float = 0.2,
         policy_lr: float = 1e-3,
         value_lr: float = 1e-3,
@@ -115,6 +115,7 @@ class FeedMeAgent:
             policy_loss, policy_info, grads = self.compute_policy_loss_and_grads(batch)
             policy_losses.append(policy_loss)
             self.policy_optimizer.update(self.model.p_net, grads)
+            mx.eval(self.model.p_net.parameters())
             if policy_info.approximate_kl > 1.5 * self.target_kl:
                 print(
                     f"stopping early at iter {i} for reaching max KL (value ~{policy_info.approximate_kl:.4f})"
