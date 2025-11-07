@@ -232,11 +232,12 @@ class FeedMeAgent:
         ep_rewards_a = mx.array(ep_rewards_a)
         ep_rewards_b = mx.array(ep_rewards_b)
         print(
-            f"A reward: mean {mx.mean(ep_rewards_a):.3f} +/- {mx.std(ep_rewards_a):.3f}"
+            f"Mean A reward: {mx.mean(ep_rewards_a):.3f} +/- {mx.std(ep_rewards_a):.3f}"
         )
         print(
-            f"B reward: mean {mx.mean(ep_rewards_b):.3f} +/- {mx.std(ep_rewards_b):.3f}"
+            f"Mean B reward: {mx.mean(ep_rewards_b):.3f} +/- {mx.std(ep_rewards_b):.3f}"
         )
+        print(f"Mean episode length: {sum(actions_a) / n_episodes:.3f}")
         print(f"A num actions: {actions_a}")
         print(f"A num actions: {actions_b}")
 

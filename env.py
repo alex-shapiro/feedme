@@ -1,3 +1,4 @@
+import random
 from enum import Enum
 from typing import final, override
 
@@ -22,8 +23,14 @@ class Action(Enum):
 
 @final
 class FeedMeEnv:
-    def __init__(self):
-        self.timeout = 100
+    def __init__(self, max_steps: int = 200, termination_prob: float = 0.01):
+        """
+        Args:
+            max_steps: Maximum episode length
+            termination_prob: Probability of episode ending at each step
+        """
+        self.max_steps = max_steps
+        self.termination_prob = termination_prob
         self.reset()
 
     def obs_space_shape(self) -> tuple[int, int]:
@@ -34,7 +41,14 @@ class FeedMeEnv:
 
     def reset(self) -> tuple[mx.array, mx.array]:
         self.t = 0
-        self.obs = mx.zeros([self.timeout, 2], dtype=mx.float32) - 1.0
+        self.obs = mx.zeros([self.max_steps, 2], dtype=mx.float32) - 1.0
+
+        # Get hidden termination step by sampling from geometric distribution
+        # E[T] = 1/termination_prob
+        self.hidden_termination_step = min(
+            self.max_steps, int(random.expovariate(self.termination_prob)) + 1
+        )
+
         return self.observation()
 
     def observation(self) -> tuple[mx.array, mx.array]:
@@ -47,7 +61,7 @@ class FeedMeEnv:
         action_a: int,
         action_b: int,
     ) -> tuple[tuple[mx.array, mx.array], tuple[int, int], bool]:
-        assert self.t < self.timeout
+        assert self.t < self.max_steps
         self.obs[self.t, 0] = float(action_a)
         self.obs[self.t, 1] = float(action_b)
 
@@ -55,7 +69,10 @@ class FeedMeEnv:
         reward_b = self.get_reward(action_b, action_a)
         self.t += 1
         reward = (reward_a, reward_b)
-        done = self.t == self.timeout
+
+        # Episode ends when reaching the hidden termination step
+        done = self.t >= self.hidden_termination_step
+
         return self.observation(), reward, done
 
     def get_reward(self, action_a: int, action_b: int) -> int:
