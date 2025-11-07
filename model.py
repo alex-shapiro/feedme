@@ -12,24 +12,16 @@ class FeedmeNet(nn.Module):
 
 @final
 class PolicyNet(nn.Module):
-    def __init__(self):
-        # input shape: [B, 30, 2]
+    def __init__(self, history_length: int = 5):
+        # input shape: [B, 30, 2], but we only use last history_length steps
         super().__init__()
-        self.conv1 = nn.Conv1d(
-            in_channels=2,
-            out_channels=16,
-            kernel_size=3,
-            padding=1,
-        )
-        self.conv2 = nn.Conv1d(
-            in_channels=16,
-            out_channels=32,
-            kernel_size=3,
-            padding=1,
-        )
-        # Flattened 32 * 30 = 960
-        self.linear1 = nn.Linear(960, 64)
-        self.linear2 = nn.Linear(64, 3)
+        self.history_length = history_length
+        # Flattened: history_length * 2 features
+        input_size = history_length * 2
+        self.linear1 = nn.Linear(input_size, 128)
+        self.linear2 = nn.Linear(128, 128)
+        self.linear3 = nn.Linear(128, 64)
+        self.linear4 = nn.Linear(64, 3)
 
     @override
     def __call__(
@@ -42,48 +34,46 @@ class PolicyNet(nn.Module):
         return policy, logps
 
     def policy(self, obs: mx.array) -> Categorical:
-        x = self.conv1(obs)
-        x = nn.leaky_relu(x)
-        x = self.conv2(x)
-        x = nn.leaky_relu(x)
+        # Extract recent history: [B, 30, 2] -> [B, history_length, 2]
+        x = obs[:, -self.history_length :, :]
+        # Flatten: [B, history_length, 2] -> [B, history_length * 2]
         x = mx.flatten(x, start_axis=1)
         x = self.linear1(x)
         x = nn.leaky_relu(x)
-        logits = self.linear2(x)
+        x = self.linear2(x)
+        x = nn.leaky_relu(x)
+        x = self.linear3(x)
+        x = nn.leaky_relu(x)
+        logits = self.linear4(x)
         return Categorical(logits)
 
 
 @final
 class ValueNet(nn.Module):
-    def __init__(self):
-        # input shape: [B, 30, 2]
+    def __init__(self, history_length: int = 5):
+        # input shape: [B, 30, 2], but we only use last history_length steps
         super().__init__()
-        self.conv1 = nn.Conv1d(
-            in_channels=2,
-            out_channels=16,
-            kernel_size=3,
-            padding=1,
-        )
-        self.conv2 = nn.Conv1d(
-            in_channels=16,
-            out_channels=32,
-            kernel_size=3,
-            padding=1,
-        )
-        # Flattened 32 * 30 = 960
-        self.linear1 = nn.Linear(960, 64)
-        self.linear2 = nn.Linear(64, 1)
+        self.history_length = history_length
+        # Flattened: history_length * 2 features
+        input_size = history_length * 2
+        self.linear1 = nn.Linear(input_size, 128)
+        self.linear2 = nn.Linear(128, 128)
+        self.linear3 = nn.Linear(128, 64)
+        self.linear4 = nn.Linear(64, 1)
 
     @override
     def __call__(self, obs: mx.array) -> mx.array:
-        x = self.conv1(obs)
-        x = nn.leaky_relu(x)
-        x = self.conv2(x)
-        x = nn.leaky_relu(x)
+        # Extract recent history: [B, 30, 2] -> [B, history_length, 2]
+        x = obs[:, -self.history_length :, :]
+        # Flatten: [B, history_length, 2] -> [B, history_length * 2]
         x = mx.flatten(x, start_axis=1)
         x = self.linear1(x)
         x = nn.leaky_relu(x)
-        return self.linear2(x)
+        x = self.linear2(x)
+        x = nn.leaky_relu(x)
+        x = self.linear3(x)
+        x = nn.leaky_relu(x)
+        return self.linear4(x)
 
 
 class EaterNet(nn.Module):
