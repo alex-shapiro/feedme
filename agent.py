@@ -56,11 +56,13 @@ class FeedMeAgent:
         # trajectory buffer
         self.trajectories_a = TrajectoryBuffer(
             capacity=n_steps_per_epoch,
+            obs_space_shape=self.env.obs_space_shape(),
             gamma=gamma,
             lamda=lamda,
         )
         self.trajectories_b = TrajectoryBuffer(
             capacity=n_steps_per_epoch,
+            obs_space_shape=self.env.obs_space_shape(),
             gamma=gamma,
             lamda=lamda,
         )
@@ -111,7 +113,7 @@ class FeedMeAgent:
             )
 
             if epoch % 10 == 0:
-                self.evaluate(n_episodes=100)
+                self.evaluate(n_episodes=20)
                 self.save_model(f"checkpoints/e{epoch}.pk")
 
     def update(self):
@@ -199,8 +201,8 @@ class FeedMeAgent:
     def evaluate(self, n_episodes: int):
         ep_rewards_a = []
         ep_rewards_b = []
-        actions_a = [0, 0, 0, 0]
-        actions_b = [0, 0, 0, 0]
+        actions_a = [0, 0, 0]
+        actions_b = [0, 0, 0]
         for i in range(n_episodes):
             ra = 0.0
             rb = 0.0
@@ -229,8 +231,12 @@ class FeedMeAgent:
             ep_rewards_b.append(rb)
         ep_rewards_a = mx.array(ep_rewards_a)
         ep_rewards_b = mx.array(ep_rewards_b)
-        print(f"A reward: mean {mx.mean(ep_rewards_a):.4f} +/- {mx.std(ep_rewards_a)}")
-        print(f"B reward: mean {mx.mean(ep_rewards_b):.4f} +/- {mx.std(ep_rewards_b)}")
+        print(
+            f"A reward: mean {mx.mean(ep_rewards_a):.3f} +/- {mx.std(ep_rewards_a):.3f}"
+        )
+        print(
+            f"B reward: mean {mx.mean(ep_rewards_b):.3f} +/- {mx.std(ep_rewards_b):.3f}"
+        )
         print(f"A num actions: {actions_a}")
         print(f"A num actions: {actions_b}")
 
@@ -311,4 +317,3 @@ if __name__ == "__main__":
     except FileNotFoundError:
         print("No checkpoint found, starting fresh")
     agent.train()
-    agent.evaluate(n_episodes=100)

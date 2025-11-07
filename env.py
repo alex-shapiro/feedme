@@ -23,8 +23,14 @@ class Action(Enum):
 @final
 class FeedMeEnv:
     def __init__(self):
-        self.timeout = 30
+        self.timeout = 100
         self.reset()
+
+    def obs_space_shape(self) -> tuple[int, int]:
+        return self.obs.shape  # pyright: ignore[reportReturnType]
+
+    def action_space_n(self) -> int:
+        return len(Action)
 
     def reset(self) -> tuple[mx.array, mx.array]:
         self.t = 0
