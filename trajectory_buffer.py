@@ -9,6 +9,7 @@ class TrajectoryBuffer:
     def __init__(
         self,
         capacity: int,
+        obs_space_shape: tuple[int, int],
         gamma: float = 0.99,
         lamda: float = 0.95,
     ):
@@ -17,7 +18,7 @@ class TrajectoryBuffer:
         # index for the next insert
         self.next_index = 0
         # environment observations
-        self.obs = mx.zeros([capacity, 30, 2], dtype=mx.float32)
+        self.obs = mx.zeros([capacity, *obs_space_shape], dtype=mx.float32)
         # predicted actions
         self.actions = mx.zeros([capacity], dtype=mx.int8)
         # action log probabilities

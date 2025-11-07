@@ -13,7 +13,7 @@ class FeedmeNet(nn.Module):
 @final
 class PolicyNet(nn.Module):
     def __init__(self, history_length: int = 5):
-        # input shape: [B, 30, 2], but we only use last history_length steps
+        # input shape: [B, T, 2], but we only use last history_length steps
         super().__init__()
         self.history_length = history_length
         # Flattened: history_length * 2 features
@@ -34,7 +34,7 @@ class PolicyNet(nn.Module):
         return policy, logps
 
     def policy(self, obs: mx.array) -> Categorical:
-        # Extract recent history: [B, 30, 2] -> [B, history_length, 2]
+        # Extract recent history: [B, T, 2] -> [B, history_length, 2]
         x = obs[:, -self.history_length :, :]
         # Flatten: [B, history_length, 2] -> [B, history_length * 2]
         x = mx.flatten(x, start_axis=1)
@@ -51,7 +51,7 @@ class PolicyNet(nn.Module):
 @final
 class ValueNet(nn.Module):
     def __init__(self, history_length: int = 5):
-        # input shape: [B, 30, 2], but we only use last history_length steps
+        # input shape: [B, T, 2], but we only use last history_length steps
         super().__init__()
         self.history_length = history_length
         # Flattened: history_length * 2 features
@@ -63,7 +63,7 @@ class ValueNet(nn.Module):
 
     @override
     def __call__(self, obs: mx.array) -> mx.array:
-        # Extract recent history: [B, 30, 2] -> [B, history_length, 2]
+        # Extract recent history: [B, T, 2] -> [B, history_length, 2]
         x = obs[:, -self.history_length :, :]
         # Flatten: [B, history_length, 2] -> [B, history_length * 2]
         x = mx.flatten(x, start_axis=1)
