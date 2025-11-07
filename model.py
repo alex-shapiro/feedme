@@ -12,16 +12,46 @@ class FeedmeNet(nn.Module):
 
 @final
 class PolicyNet(nn.Module):
-    def __init__(self, history_length: int = 5):
-        # input shape: [B, T, 2], but we only use last history_length steps
+    def __init__(
+        self,
+        seq_len: int = 200,
+        d_model: int = 64,
+        n_heads: int = 4,
+        n_layers: int = 2,
+    ):
+        # input shape: [B, seq_len, 2] - full sequence with attention
         super().__init__()
-        self.history_length = history_length
-        # Flattened: history_length * 2 features
-        input_size = history_length * 2
-        self.linear1 = nn.Linear(input_size, 128)
-        self.linear2 = nn.Linear(128, 128)
-        self.linear3 = nn.Linear(128, 64)
-        self.linear4 = nn.Linear(64, 3)
+        self.seq_len = seq_len
+        self.d_model = d_model
+        self.n_layers = n_layers
+
+        # Project 2D input (my_action, opponent_action) to d_model dimensions
+        self.input_proj = nn.Linear(2, d_model)
+
+        # Positional encoding (learned)
+        self.pos_encoding = mx.zeros((seq_len, d_model))
+
+        # Multi-head attention layers
+        self.attentions = [
+            nn.MultiHeadAttention(d_model, n_heads) for _ in range(n_layers)
+        ]
+
+        # Feedforward layers
+        self.ffns = [
+            nn.Sequential(
+                nn.Linear(d_model, d_model * 4),
+                nn.GELU(),
+                nn.Linear(d_model * 4, d_model),
+            )
+            for _ in range(n_layers)
+        ]
+
+        # Layer norms
+        self.ln1s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
+        self.ln2s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
+
+        # Output head
+        self.output = nn.Linear(d_model, 3)
 
     @override
     def __call__(
@@ -34,46 +64,102 @@ class PolicyNet(nn.Module):
         return policy, logps
 
     def policy(self, obs: mx.array) -> Categorical:
-        # Extract recent history: [B, T, 2] -> [B, history_length, 2]
-        x = obs[:, -self.history_length :, :]
-        # Flatten: [B, history_length, 2] -> [B, history_length * 2]
-        x = mx.flatten(x, start_axis=1)
-        x = self.linear1(x)
-        x = nn.leaky_relu(x)
-        x = self.linear2(x)
-        x = nn.leaky_relu(x)
-        x = self.linear3(x)
-        x = nn.leaky_relu(x)
-        logits = self.linear4(x)
+        # obs: [B, seq_len, 2]
+        B, T, _ = obs.shape
+
+        # Project input to d_model: [B, T, 2] -> [B, T, d_model]
+        x = self.input_proj(obs)
+
+        # Add positional encoding
+        x = x + self.pos_encoding[:T, :]
+
+        # Apply transformer layers
+        for i in range(self.n_layers):
+            # Self-attention with residual
+            attn_out = self.attentions[i](x, x, x)
+            x = self.ln1s[i](x + attn_out)
+
+            # Feedforward with residual
+            ffn_out = self.ffns[i](x)
+            x = self.ln2s[i](x + ffn_out)
+
+        # Take the last timestep's representation: [B, T, d_model] -> [B, d_model]
+        x = x[:, -1, :]
+
+        # Project to action logits: [B, d_model] -> [B, 3]
+        logits = self.output(x)
         return Categorical(logits)
 
 
 @final
 class ValueNet(nn.Module):
-    def __init__(self, history_length: int = 5):
-        # input shape: [B, T, 2], but we only use last history_length steps
+    def __init__(
+        self,
+        seq_len: int = 200,
+        d_model: int = 64,
+        n_heads: int = 4,
+        n_layers: int = 2,
+    ):
+        # input shape: [B, seq_len, 2] - full sequence with attention
         super().__init__()
-        self.history_length = history_length
-        # Flattened: history_length * 2 features
-        input_size = history_length * 2
-        self.linear1 = nn.Linear(input_size, 128)
-        self.linear2 = nn.Linear(128, 128)
-        self.linear3 = nn.Linear(128, 64)
-        self.linear4 = nn.Linear(64, 1)
+        self.seq_len = seq_len
+        self.d_model = d_model
+        self.n_layers = n_layers
+
+        # Project 2D input (my_action, opponent_action) to d_model dimensions
+        self.input_proj = nn.Linear(2, d_model)
+
+        # Positional encoding (learned)
+        self.pos_encoding = mx.zeros((seq_len, d_model))
+
+        # Multi-head attention layers
+        self.attentions = [
+            nn.MultiHeadAttention(d_model, n_heads) for _ in range(n_layers)
+        ]
+
+        # Feedforward layers
+        self.ffns = [
+            nn.Sequential(
+                nn.Linear(d_model, d_model * 4),
+                nn.GELU(),
+                nn.Linear(d_model * 4, d_model),
+            )
+            for _ in range(n_layers)
+        ]
+
+        # Layer norms
+        self.ln1s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
+        self.ln2s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
+
+        # Output head
+        self.output = nn.Linear(d_model, 1)
 
     @override
     def __call__(self, obs: mx.array) -> mx.array:
-        # Extract recent history: [B, T, 2] -> [B, history_length, 2]
-        x = obs[:, -self.history_length :, :]
-        # Flatten: [B, history_length, 2] -> [B, history_length * 2]
-        x = mx.flatten(x, start_axis=1)
-        x = self.linear1(x)
-        x = nn.leaky_relu(x)
-        x = self.linear2(x)
-        x = nn.leaky_relu(x)
-        x = self.linear3(x)
-        x = nn.leaky_relu(x)
-        return self.linear4(x)
+        # obs: [B, seq_len, 2]
+        B, T, _ = obs.shape
+
+        # Project input to d_model: [B, T, 2] -> [B, T, d_model]
+        x = self.input_proj(obs)
+
+        # Add positional encoding
+        x = x + self.pos_encoding[:T, :]
+
+        # Apply transformer layers
+        for i in range(self.n_layers):
+            # Self-attention with residual
+            attn_out = self.attentions[i](x, x, x)
+            x = self.ln1s[i](x + attn_out)
+
+            # Feedforward with residual
+            ffn_out = self.ffns[i](x)
+            x = self.ln2s[i](x + ffn_out)
+
+        # Take the last timestep's representation: [B, T, d_model] -> [B, d_model]
+        x = x[:, -1, :]
+
+        # Project to value: [B, d_model] -> [B, 1]
+        return self.output(x)
 
 
 class EaterNet(nn.Module):
