@@ -502,7 +502,7 @@ class PolicyInfo:
 
 
 if __name__ == "__main__":
-    agent = FeedMeAgent(n_epochs=1000, curriculum_epochs=100)
+    agent = FeedMeAgent(n_epochs=1000, curriculum_epochs=500)
     try:
         agent.load_latest_model()
     except FileNotFoundError:
