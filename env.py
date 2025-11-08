@@ -23,7 +23,7 @@ class Action(Enum):
 
 @final
 class FeedMeEnv:
-    def __init__(self, max_steps: int = 200, termination_prob: float = 0.01):
+    def __init__(self, max_steps: int = 200, termination_prob: float = 0.04):
         """
         Args:
             max_steps: Maximum episode length

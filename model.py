@@ -73,24 +73,20 @@ class PolicyNet(nn.Module):
         # Project 3D input (my_action, opponent_action, is_episode_start) to d_model dimensions
         self.input_proj = nn.Linear(3, d_model)
 
-        # Multi-head attention layers
-        self.attentions = [
-            nn.MultiHeadAttention(d_model, n_heads) for _ in range(n_layers)
-        ]
-
-        # Feedforward layers
-        self.ffns = [
-            nn.Sequential(
-                nn.Linear(d_model, d_model * 4),
-                nn.GELU(),
-                nn.Linear(d_model * 4, d_model),
+        # Transformer layers - register each individually so MLX tracks parameters
+        for i in range(n_layers):
+            setattr(self, f"attention_{i}", nn.MultiHeadAttention(d_model, n_heads))
+            setattr(
+                self,
+                f"ffn_{i}",
+                nn.Sequential(
+                    nn.Linear(d_model, d_model * 4),
+                    nn.GELU(),
+                    nn.Linear(d_model * 4, d_model),
+                ),
             )
-            for _ in range(n_layers)
-        ]
-
-        # Layer norms
-        self.ln1s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
-        self.ln2s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
+            setattr(self, f"ln1_{i}", nn.LayerNorm(d_model))
+            setattr(self, f"ln2_{i}", nn.LayerNorm(d_model))
 
         # Output head
         self.output = nn.Linear(d_model, 3)
@@ -118,12 +114,16 @@ class PolicyNet(nn.Module):
         # Apply transformer layers
         for i in range(self.n_layers):
             # Self-attention with residual
-            attn_out = self.attentions[i](x, x, x)
-            x = self.ln1s[i](x + attn_out)
+            attn = getattr(self, f"attention_{i}")
+            ln1 = getattr(self, f"ln1_{i}")
+            attn_out = attn(x, x, x)
+            x = ln1(x + attn_out)
 
             # Feedforward with residual
-            ffn_out = self.ffns[i](x)
-            x = self.ln2s[i](x + ffn_out)
+            ffn = getattr(self, f"ffn_{i}")
+            ln2 = getattr(self, f"ln2_{i}")
+            ffn_out = ffn(x)
+            x = ln2(x + ffn_out)
 
         # Take the last timestep's representation: [B, T, d_model] -> [B, d_model]
         x = x[:, -1, :]
@@ -152,24 +152,20 @@ class ValueNet(nn.Module):
         # Project 3D input (my_action, opponent_action, is_episode_start) to d_model dimensions
         self.input_proj = nn.Linear(3, d_model)
 
-        # Multi-head attention layers
-        self.attentions = [
-            nn.MultiHeadAttention(d_model, n_heads) for _ in range(n_layers)
-        ]
-
-        # Feedforward layers
-        self.ffns = [
-            nn.Sequential(
-                nn.Linear(d_model, d_model * 4),
-                nn.GELU(),
-                nn.Linear(d_model * 4, d_model),
+        # Transformer layers - register each individually so MLX tracks parameters
+        for i in range(n_layers):
+            setattr(self, f"attention_{i}", nn.MultiHeadAttention(d_model, n_heads))
+            setattr(
+                self,
+                f"ffn_{i}",
+                nn.Sequential(
+                    nn.Linear(d_model, d_model * 4),
+                    nn.GELU(),
+                    nn.Linear(d_model * 4, d_model),
+                ),
             )
-            for _ in range(n_layers)
-        ]
-
-        # Layer norms
-        self.ln1s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
-        self.ln2s = [nn.LayerNorm(d_model) for _ in range(n_layers)]
+            setattr(self, f"ln1_{i}", nn.LayerNorm(d_model))
+            setattr(self, f"ln2_{i}", nn.LayerNorm(d_model))
 
         # Output head
         self.output = nn.Linear(d_model, 1)
@@ -188,12 +184,16 @@ class ValueNet(nn.Module):
         # Apply transformer layers
         for i in range(self.n_layers):
             # Self-attention with residual
-            attn_out = self.attentions[i](x, x, x)
-            x = self.ln1s[i](x + attn_out)
+            attn = getattr(self, f"attention_{i}")
+            ln1 = getattr(self, f"ln1_{i}")
+            attn_out = attn(x, x, x)
+            x = ln1(x + attn_out)
 
             # Feedforward with residual
-            ffn_out = self.ffns[i](x)
-            x = self.ln2s[i](x + ffn_out)
+            ffn = getattr(self, f"ffn_{i}")
+            ln2 = getattr(self, f"ln2_{i}")
+            ffn_out = ffn(x)
+            x = ln2(x + ffn_out)
 
         # Take the last timestep's representation: [B, T, d_model] -> [B, d_model]
         x = x[:, -1, :]

@@ -266,8 +266,33 @@ class FeedMeAgent:
                 break
 
         # Full-batch training for value
-        for _ in range(self.n_value_training_iters):
+        for i in range(self.n_value_training_iters):
             value_loss, grads = self.compute_value_loss_and_grads(batch_a, self.model_a)
+
+            # Debug: Check gradient norms on first iteration
+            if i == 0:
+                grad_norms = {}
+                for key in grads:
+                    if isinstance(grads[key], mx.array):
+                        grad_norms[key] = float(mx.sqrt(mx.sum(grads[key] ** 2)))
+                    elif isinstance(grads[key], dict):
+                        for subkey in grads[key]:
+                            if isinstance(grads[key][subkey], mx.array):
+                                full_key = f"{key}.{subkey}"
+                                grad_norms[full_key] = float(
+                                    mx.sqrt(mx.sum(grads[key][subkey] ** 2))
+                                )
+
+                print("\n=== Value Network Gradient Norms ===")
+                for key in sorted(grad_norms.keys()):
+                    print(f"{key}: {grad_norms[key]:.6f}")
+
+                all_norms = list(grad_norms.values())
+                print(
+                    f"Gradient stats - mean: {sum(all_norms) / len(all_norms):.6f}, "
+                    f"max: {max(all_norms):.6f}, min: {min(all_norms):.6f}"
+                )
+
             grads = self.clip_gradients(grads)
             self.value_optimizer_a.update(self.model_a.v_net, grads)
             mx.eval(self.model_a.v_net.parameters())
