@@ -220,6 +220,32 @@ class FeedMeAgent:
 
         # Debug: Print value network diagnostics
         values_a = self.model_a.v_net(batch_a.obs).flatten()
+
+        # Debug: Print registered parameters (only on epoch 0)
+        if self.trained_epochs == 0:
+            print("\n=== Value Network Registered Parameters ===")
+
+            # Try trainable_parameters() instead
+            try:
+                params = self.model_a.v_net.trainable_parameters()
+            except:
+                params = self.model_a.v_net.parameters()
+
+            def flatten_dict(d, prefix=""):
+                items = []
+                for k, v in d.items():
+                    new_key = f"{prefix}.{k}" if prefix else k
+                    if isinstance(v, dict):
+                        items.extend(flatten_dict(v, new_key))
+                    else:
+                        items.append(new_key)
+                return items
+
+            param_names = flatten_dict(params)
+            print(f"Total parameters: {len(param_names)}")
+            for name in sorted(param_names):
+                print(f"  {name}")
+
         print("\n=== Agent A Value Diagnostics ===")
         print(
             f"Returns - mean: {float(mx.mean(batch_a.returns)):.2f}, "
@@ -271,27 +297,39 @@ class FeedMeAgent:
 
             # Debug: Check gradient norms on first iteration
             if i == 0:
-                grad_norms = {}
-                for key in grads:
-                    if isinstance(grads[key], mx.array):
-                        grad_norms[key] = float(mx.sqrt(mx.sum(grads[key] ** 2)))
-                    elif isinstance(grads[key], dict):
-                        for subkey in grads[key]:
-                            if isinstance(grads[key][subkey], mx.array):
-                                full_key = f"{key}.{subkey}"
-                                grad_norms[full_key] = float(
-                                    mx.sqrt(mx.sum(grads[key][subkey] ** 2))
-                                )
+                # Recursively flatten gradient dictionary including lists
+                def flatten_grads(d, prefix=""):
+                    norms = {}
+                    for key, val in d.items():
+                        new_key = f"{prefix}.{key}" if prefix else key
+                        if isinstance(val, mx.array):
+                            norms[new_key] = float(mx.sqrt(mx.sum(val**2)))
+                        elif isinstance(val, dict):
+                            norms.update(flatten_grads(val, new_key))
+                        elif isinstance(val, list):
+                            for idx, item in enumerate(val):
+                                if isinstance(item, dict):
+                                    norms.update(
+                                        flatten_grads(item, f"{new_key}[{idx}]")
+                                    )
+                                elif isinstance(item, mx.array):
+                                    norms[f"{new_key}[{idx}]"] = float(
+                                        mx.sqrt(mx.sum(item**2))
+                                    )
+                    return norms
+
+                grad_norms = flatten_grads(grads)
 
                 print("\n=== Value Network Gradient Norms ===")
                 for key in sorted(grad_norms.keys()):
                     print(f"{key}: {grad_norms[key]:.6f}")
 
                 all_norms = list(grad_norms.values())
-                print(
-                    f"Gradient stats - mean: {sum(all_norms) / len(all_norms):.6f}, "
-                    f"max: {max(all_norms):.6f}, min: {min(all_norms):.6f}"
-                )
+                if all_norms:
+                    print(
+                        f"Gradient stats - mean: {sum(all_norms) / len(all_norms):.6f}, "
+                        f"max: {max(all_norms):.6f}, min: {min(all_norms):.6f}"
+                    )
 
             grads = self.clip_gradients(grads)
             self.value_optimizer_a.update(self.model_a.v_net, grads)
