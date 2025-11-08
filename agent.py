@@ -8,6 +8,7 @@ from mlx.optimizers import AdamW
 
 from env import Action, FeedMeEnv
 from model import EaterNet
+from scripted_agents import TitForTatAgent
 from trajectory_buffer import TrajectoryBatch, TrajectoryBuffer
 
 type Gradients = dict[str, Any]
@@ -30,6 +31,8 @@ class FeedMeAgent:
         entropy_coef: float = 0.01,
         initial_entropy_coef: float = 0.1,
         entropy_coef_decay: float = 0.995,
+        curriculum_epochs: int = 0,  # Number of epochs to train against scripted opponent
+        use_curriculum: bool = True,  # Whether to use curriculum learning at all
     ):
         super().__init__()
 
@@ -44,9 +47,15 @@ class FeedMeAgent:
         self.entropy_coef_decay = entropy_coef_decay
         self.current_entropy_coef = initial_entropy_coef
         self.trained_epochs = 0
+        self.curriculum_epochs = curriculum_epochs
+        self.use_curriculum = use_curriculum
 
         # simulation env
         self.env = FeedMeEnv()
+
+        # Scripted opponents for curriculum learning
+        self.scripted_agent_a = TitForTatAgent(start_with_feed=True)
+        self.scripted_agent_b = TitForTatAgent(start_with_feed=False)
 
         # model
         self.model = EaterNet()
@@ -69,18 +78,38 @@ class FeedMeAgent:
 
     def train(self):
         for epoch in range(self.trained_epochs + 1, self.n_epochs + 1):
-            print(f"\nEpoch {epoch} (entropy_coef={self.current_entropy_coef:.4f})")
+            # Determine if we're in curriculum phase
+            in_curriculum = self.use_curriculum and epoch <= self.curriculum_epochs
+            mode = "CURRICULUM" if in_curriculum else "SELF-PLAY"
+            print(
+                f"\nEpoch {epoch} [{mode}] (entropy_coef={self.current_entropy_coef:.4f})"
+            )
 
             # build rollouts
             (obs_a, obs_b) = self.env.reset()
+            if in_curriculum:
+                self.scripted_agent_a.reset()
+                self.scripted_agent_b.reset()
+
             final_step = self.n_steps_per_epoch - 1
             for t in range(self.n_steps_per_epoch):
-                action_a, logp_a, value_a = self.model.step(obs_a)
-                action_b, logp_b, value_b = self.model.step(obs_b)
+                # Get actions - use scripted or learned depending on curriculum phase
+                if in_curriculum:
+                    # Agent A (learned) vs Scripted Agent B
+                    action_a, logp_a, value_a = self.model_a.step(obs_a)
+                    action_b = self.scripted_agent_b.step(obs_b)
+                    logp_b, value_b = 0.0, 0.0  # Not used for scripted agent
+                else:
+                    # Both agents learned (self-play)
+                    action_a, logp_a, value_a = self.model_a.step(obs_a)
+                    action_b, logp_b, value_b = self.model_b.step(obs_b)
+
                 (next_obs_a, next_obs_b), (reward_a, reward_b), done = self.env.step(
                     action_a,
                     action_b,
                 )
+
+                # Only store trajectories for learned agents
                 self.trajectories_a.push(
                     obs=obs_a,
                     action=action_a,
@@ -88,24 +117,35 @@ class FeedMeAgent:
                     value=value_a,
                     reward=reward_a,
                 )
-                self.trajectories_b.push(
-                    obs=obs_b,
-                    action=action_b,
-                    logp=logp_b,
-                    value=value_b,
-                    reward=reward_b,
-                )
+                if not in_curriculum:
+                    # Only train agent B in self-play mode
+                    self.trajectories_b.push(
+                        obs=obs_b,
+                        action=action_b,
+                        logp=logp_b,
+                        value=value_b,
+                        reward=reward_b,
+                    )
+
                 obs_a = next_obs_a
                 obs_b = next_obs_b
                 truncated = t == final_step
                 if done or truncated:
-                    value_a = self.model.value(obs_a) if truncated else 0.0
-                    value_b = self.model.value(obs_b) if truncated else 0.0
+                    value_a = self.model_a.value(obs_a) if truncated else 0.0
                     self.trajectories_a.push_episode_end(value_a, truncated=truncated)
-                    self.trajectories_b.push_episode_end(value_b, truncated=truncated)
-                    obs_a, obs_b = self.env.reset()
 
-            self.update()
+                    if not in_curriculum:
+                        value_b = self.model_b.value(obs_b) if truncated else 0.0
+                        self.trajectories_b.push_episode_end(
+                            value_b, truncated=truncated
+                        )
+
+                    obs_a, obs_b = self.env.reset()
+                    if in_curriculum:
+                        self.scripted_agent_a.reset()
+                        self.scripted_agent_b.reset()
+
+            self.update(in_curriculum=in_curriculum)
 
             # Decay entropy coefficient (curriculum learning)
             self.current_entropy_coef = max(
@@ -116,38 +156,73 @@ class FeedMeAgent:
                 self.evaluate(n_episodes=20)
                 self.save_model(f"checkpoints/e{epoch}.pk")
 
-    def update(self):
+    def update(self, in_curriculum: bool = False):
         batch_a = self.trajectories_a.get_batch()
-        batch_b = self.trajectories_b.get_batch()
-        batch = batch_a.concat(batch_b)
-        assert len(batch.obs) == 1024
 
-        policy_losses = []
-        value_losses = []
+        # Train agent A
+        policy_losses_a = []
+        value_losses_a = []
 
         for i in range(self.n_policy_training_iters):
-            policy_loss, policy_info, grads = self.compute_policy_loss_and_grads(batch)
-            policy_losses.append(policy_loss)
-            self.policy_optimizer.update(self.model.p_net, grads)
-            mx.eval(self.model.p_net.parameters())
+            policy_loss, policy_info, grads = self.compute_policy_loss_and_grads(
+                batch_a, self.model_a
+            )
+            policy_losses_a.append(policy_loss)
+            self.policy_optimizer_a.update(self.model_a.p_net, grads)
+            mx.eval(self.model_a.p_net.parameters())
             if policy_info.approximate_kl > 1.5 * self.target_kl:
-                print(
-                    f"stopping early at iter {i} for reaching max KL (value ~{policy_info.approximate_kl:.4f})"
-                )
                 break
 
         for i in range(self.n_value_training_iters):
-            value_loss, grads = self.compute_value_loss_and_grads(batch)
-            self.value_optimizer.update(self.model.v_net, grads)
-            mx.eval(self.model.v_net.parameters())
-            value_losses.append(value_loss)
+            value_loss, grads = self.compute_value_loss_and_grads(batch_a, self.model_a)
+            self.value_optimizer_a.update(self.model_a.v_net, grads)
+            mx.eval(self.model_a.v_net.parameters())
+            value_losses_a.append(value_loss)
 
-        policy_losses = mx.array(policy_losses)
-        value_losses = mx.array(value_losses)
+        # Only train agent B in self-play mode
+        if not in_curriculum:
+            batch_b = self.trajectories_b.get_batch()
+            policy_losses_b = []
+            value_losses_b = []
+
+            for i in range(self.n_policy_training_iters):
+                policy_loss, policy_info, grads = self.compute_policy_loss_and_grads(
+                    batch_b, self.model_b
+                )
+                policy_losses_b.append(policy_loss)
+                self.policy_optimizer_b.update(self.model_b.p_net, grads)
+                mx.eval(self.model_b.p_net.parameters())
+                if policy_info.approximate_kl > 1.5 * self.target_kl:
+                    break
+
+            for i in range(self.n_value_training_iters):
+                value_loss, grads = self.compute_value_loss_and_grads(
+                    batch_b, self.model_b
+                )
+                self.value_optimizer_b.update(self.model_b.v_net, grads)
+                mx.eval(self.model_b.v_net.parameters())
+                value_losses_b.append(value_loss)
+
+        # Print stats
+        policy_losses_a = mx.array(policy_losses_a)
+        value_losses_a = mx.array(value_losses_a)
+
         print(
-            f"Policy loss: {mx.mean(policy_losses):.3f} +/- {mx.std(policy_losses):.3f}"
+            f"Agent A - Policy loss: {mx.mean(policy_losses_a):.3f} +/- {mx.std(policy_losses_a):.3f}"
         )
-        print(f"Value loss: {mx.mean(value_losses):.3f} +/- {mx.std(value_losses):.3f}")
+        print(
+            f"Agent A - Value loss: {mx.mean(value_losses_a):.3f} +/- {mx.std(value_losses_a):.3f}"
+        )
+
+        if not in_curriculum:
+            policy_losses_b = mx.array(policy_losses_b)
+            value_losses_b = mx.array(value_losses_b)
+            print(
+                f"Agent B - Policy loss: {mx.mean(policy_losses_b):.3f} +/- {mx.std(policy_losses_b):.3f}"
+            )
+            print(
+                f"Agent B - Value loss: {mx.mean(value_losses_b):.3f} +/- {mx.std(value_losses_b):.3f}"
+            )
 
     def compute_policy_loss_and_grads(
         self, batch: TrajectoryBatch
