@@ -6,8 +6,52 @@ from mlx import nn
 from categorical import Categorical
 
 
-class FeedmeNet(nn.Module):
-    pass
+def apply_rope(x: mx.array, offset: int = 0) -> mx.array:
+    """
+    Apply Rotary Position Embedding (RoPE) to input tensor.
+
+    Args:
+        x: Input tensor of shape [B, T, d_model]
+        offset: Position offset (for cached decoding, not used here)
+
+    Returns:
+        Tensor with RoPE applied, same shape as input
+    """
+    *_, seq_len, d_model = x.shape
+
+    # Create position indices
+    positions = mx.arange(offset, offset + seq_len, dtype=mx.float32)
+
+    # Create frequency bands (half of d_model since we apply to pairs)
+    # Using base 10000 as in original RoPE paper
+    freqs = mx.exp(
+        mx.arange(0, d_model, 2, dtype=mx.float32)
+        * -(mx.log(mx.array(10000.0)) / d_model)
+    )
+
+    # Compute angles: [seq_len, d_model//2]
+    angles = positions[:, None] * freqs[None, :]
+
+    # Create cos and sin: [seq_len, d_model//2]
+    cos = mx.cos(angles)
+    sin = mx.sin(angles)
+
+    # Split x into even and odd dimensions: [B, T, d_model//2]
+    x_even = x[..., 0::2]
+    x_odd = x[..., 1::2]
+
+    # Apply rotation
+    # Real part: x_even * cos - x_odd * sin
+    # Imaginary part: x_even * sin + x_odd * cos
+    rotated_even = x_even * cos - x_odd * sin
+    rotated_odd = x_even * sin + x_odd * cos
+
+    # Interleave back: stack and reshape
+    # Stack along last dimension: [B, T, d_model//2, 2]
+    rotated = mx.stack([rotated_even, rotated_odd], axis=-1)
+
+    # Reshape to [B, T, d_model]
+    return rotated.reshape(x.shape)
 
 
 @final
@@ -28,9 +72,6 @@ class PolicyNet(nn.Module):
 
         # Project 3D input (my_action, opponent_action, is_episode_start) to d_model dimensions
         self.input_proj = nn.Linear(3, d_model)
-
-        # Positional encoding (learned) - initialize with small random values
-        self.pos_encoding = mx.random.normal((seq_len, d_model)) * 0.02
 
         # Multi-head attention layers
         self.attentions = [
@@ -71,8 +112,8 @@ class PolicyNet(nn.Module):
         # Project input to d_model: [B, T, 3] -> [B, T, d_model]
         x = self.input_proj(obs)
 
-        # Add positional encoding
-        x = x + self.pos_encoding[:T, :]
+        # Apply RoPE (Rotary Position Embedding)
+        x = apply_rope(x)
 
         # Apply transformer layers
         for i in range(self.n_layers):
@@ -111,9 +152,6 @@ class ValueNet(nn.Module):
         # Project 3D input (my_action, opponent_action, is_episode_start) to d_model dimensions
         self.input_proj = nn.Linear(3, d_model)
 
-        # Positional encoding (learned) - initialize with small random values
-        self.pos_encoding = mx.random.normal((seq_len, d_model)) * 0.02
-
         # Multi-head attention layers
         self.attentions = [
             nn.MultiHeadAttention(d_model, n_heads) for _ in range(n_layers)
@@ -144,8 +182,8 @@ class ValueNet(nn.Module):
         # Project input to d_model: [B, T, 3] -> [B, T, d_model]
         x = self.input_proj(obs)
 
-        # Add positional encoding
-        x = x + self.pos_encoding[:T, :]
+        # Apply RoPE (Rotary Position Embedding)
+        x = apply_rope(x)
 
         # Apply transformer layers
         for i in range(self.n_layers):

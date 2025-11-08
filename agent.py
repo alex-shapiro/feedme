@@ -241,10 +241,6 @@ class FeedMeAgent:
             f"Advantages - mean: {float(mx.mean(batch_a.advantages)):.2f}, "
             f"std: {float(mx.std(batch_a.advantages)):.2f}"
         )
-        print(
-            f"Rewards (sum over batch): {float(mx.sum(batch_a.rewards)):.2f}, "
-            f"num nonzero: {int(mx.sum((batch_a.rewards > 0).astype(mx.float32)))}"
-        )
 
         # Train agent A
         policy_losses_a = []
