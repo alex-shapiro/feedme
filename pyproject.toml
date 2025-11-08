@@ -8,3 +8,9 @@ dependencies = [
     "mlx>=0.29.3",
     "numpy>=2.3.4",
 ]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.33.0",
+    "ruff>=0.14.4",
+]

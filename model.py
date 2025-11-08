@@ -28,8 +28,8 @@ class PolicyNet(nn.Module):
         # Project 2D input (my_action, opponent_action) to d_model dimensions
         self.input_proj = nn.Linear(2, d_model)
 
-        # Positional encoding (learned)
-        self.pos_encoding = mx.zeros((seq_len, d_model))
+        # Positional encoding (learned) - initialize with small random values
+        self.pos_encoding = mx.random.normal((seq_len, d_model)) * 0.02
 
         # Multi-head attention layers
         self.attentions = [
@@ -65,7 +65,7 @@ class PolicyNet(nn.Module):
 
     def policy(self, obs: mx.array) -> Categorical:
         # obs: [B, seq_len, 2]
-        B, T, _ = obs.shape
+        _B, T, _ = obs.shape
 
         # Project input to d_model: [B, T, 2] -> [B, T, d_model]
         x = self.input_proj(obs)
@@ -109,8 +109,8 @@ class ValueNet(nn.Module):
         # Project 2D input (my_action, opponent_action) to d_model dimensions
         self.input_proj = nn.Linear(2, d_model)
 
-        # Positional encoding (learned)
-        self.pos_encoding = mx.zeros((seq_len, d_model))
+        # Positional encoding (learned) - initialize with small random values
+        self.pos_encoding = mx.random.normal((seq_len, d_model)) * 0.02
 
         # Multi-head attention layers
         self.attentions = [
@@ -137,7 +137,7 @@ class ValueNet(nn.Module):
     @override
     def __call__(self, obs: mx.array) -> mx.array:
         # obs: [B, seq_len, 2]
-        B, T, _ = obs.shape
+        _B, T, _ = obs.shape
 
         # Project input to d_model: [B, T, 2] -> [B, T, d_model]
         x = self.input_proj(obs)

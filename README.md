@@ -16,4 +16,5 @@ Goal is to train agents that perform tit-for-tat behavior
 - V3: remove Signal action and calculate policy loss wrt policy entropy (slight boost to value over greedy strategy, but it stops after rewards ~36)
 - V4: move to a pure MLP model architecture and increase episode length from 30 to 100 (no improvement)
 - V5: use stochastic episode duration to avoid inductive defection
-- V6: switch to a transformer model architecture
+- V6: switch to a transformer model architecture (minimal improvement, slower training)
+- V7: train for N epochs with a deterministic tit-for-tat agent as teacher before switching to self play

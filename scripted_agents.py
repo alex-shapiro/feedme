@@ -1,5 +1,3 @@
-"""Scripted agents for curriculum learning"""
-
 import mlx.core as mx
 
 from env import Action
@@ -7,19 +5,17 @@ from env import Action
 
 class TitForTatAgent:
     """
-    Implements a tit-for-tat strategy:
+    Deterministic agent with a tit-for-tat strategy
     - Start with cooperation (FeedOther on turn 0)
     - On odd turns: OpenMouth (expecting to be fed)
     - On even turns: FeedOther (feeding the opponent)
-    - If opponent defects (doesn't feed when I have OpenMouth), defect back
+    - If opponent defects (does not pick FeedOther after OpenMouth), defect back
     """
 
+    start_with_feed: bool
+    defected: bool
+
     def __init__(self, start_with_feed: bool = True):
-        """
-        Args:
-            start_with_feed: If True, starts by feeding (turn 0 = FeedOther)
-                           If False, starts by opening mouth (turn 0 = OpenMouth)
-        """
         self.start_with_feed = start_with_feed
         self.defected = False  # Track if we've detected defection
 
@@ -28,21 +24,9 @@ class TitForTatAgent:
         self.defected = False
 
     def step(self, obs: mx.array) -> int:
-        """
-        Select action based on observation history.
+        """Select action based on observation history"""
 
-        Args:
-            obs: Observation array [T, 2] where obs[i] = [my_action, opponent_action]
-
-        Returns:
-            Action index (0=FeedSelf, 1=FeedOther, 2=OpenMouth)
-        """
-        # Find current timestep (first row with -1 values)
-        t = 0
-        for i in range(obs.shape[0]):
-            if float(obs[i, 0]) == -1.0:
-                break
-            t = i + 1
+        t = count_valid_timesteps(obs)
 
         # First turn: start with cooperation pattern
         if t == 0:
@@ -75,34 +59,11 @@ class TitForTatAgent:
             return Action.OpenMouth.value if t % 2 == 0 else Action.FeedOther.value
 
 
-class AlwaysCooperateAgent:
-    """Agent that always cooperates by alternating FeedOther and OpenMouth"""
-
-    def __init__(self, start_with_feed: bool = True):
-        self.start_with_feed = start_with_feed
-
-    def reset(self):
-        pass
-
-    def step(self, obs: mx.array) -> int:
-        # Find current timestep
-        t = 0
-        for i in range(obs.shape[0]):
-            if float(obs[i, 0]) == -1.0:
-                break
-            t = i + 1
-
-        if self.start_with_feed:
-            return Action.FeedOther.value if t % 2 == 0 else Action.OpenMouth.value
-        else:
-            return Action.OpenMouth.value if t % 2 == 0 else Action.FeedOther.value
-
-
-class AlwaysDefectAgent:
-    """Agent that always defects (FeedSelf)"""
-
-    def reset(self):
-        pass
-
-    def step(self, obs: mx.array) -> int:
-        return Action.FeedSelf.value
+def count_valid_timesteps(obs: mx.array) -> int:
+    """Count number of valid (non -1) timesteps in observation"""
+    t = 0
+    for i in range(obs.shape[0]):
+        if float(obs[i, 0]) == -1.0:
+            break
+        t += 1
+    return t
