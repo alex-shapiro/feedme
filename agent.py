@@ -29,8 +29,8 @@ class FeedMeAgent:
         value_lr: float = 1e-3,
         target_kl: float = 0.01,
         entropy_coef: float = 0.01,
-        initial_entropy_coef: float = 0.1,
-        entropy_coef_decay: float = 0.995,
+        initial_entropy_coef: float = 0.5,
+        entropy_coef_decay: float = 0.9995,
         curriculum_epochs: int = 0,  # Number of epochs to train against scripted opponent
         use_curriculum: bool = True,  # Whether to use curriculum learning at all
         max_grad_norm: float = 0.5,  # Gradient clipping for transformer stability
@@ -217,6 +217,34 @@ class FeedMeAgent:
 
     def update(self, in_curriculum: bool = False):
         batch_a = self.trajectories_a.get_batch()
+
+        # Debug: Print value network diagnostics
+        values_a = self.model_a.v_net(batch_a.obs).flatten()
+        print("\n=== Agent A Value Diagnostics ===")
+        print(
+            f"Returns - mean: {float(mx.mean(batch_a.returns)):.2f}, "
+            f"std: {float(mx.std(batch_a.returns)):.2f}, "
+            f"min: {float(mx.min(batch_a.returns)):.2f}, "
+            f"max: {float(mx.max(batch_a.returns)):.2f}"
+        )
+        print(
+            f"Value predictions - mean: {float(mx.mean(values_a)):.2f}, "
+            f"std: {float(mx.std(values_a)):.2f}, "
+            f"min: {float(mx.min(values_a)):.2f}, "
+            f"max: {float(mx.max(values_a)):.2f}"
+        )
+        print(
+            f"Value error (returns - predictions) - mean: {float(mx.mean(batch_a.returns - values_a)):.2f}, "
+            f"std: {float(mx.std(batch_a.returns - values_a)):.2f}"
+        )
+        print(
+            f"Advantages - mean: {float(mx.mean(batch_a.advantages)):.2f}, "
+            f"std: {float(mx.std(batch_a.advantages)):.2f}"
+        )
+        print(
+            f"Rewards (sum over batch): {float(mx.sum(batch_a.rewards)):.2f}, "
+            f"num nonzero: {int(mx.sum((batch_a.rewards > 0).astype(mx.float32)))}"
+        )
 
         # Train agent A
         policy_losses_a = []
