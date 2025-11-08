@@ -61,7 +61,10 @@ class FeedMeAgent:
         self.env = FeedMeEnv()
 
         # Scripted opponent for curriculum learning
-        self.scripted_agent_b = TitForTatAgent(start_with_feed=False)
+        # Tolerates 2 defections before retaliating to allow exploration
+        self.scripted_agent_b = TitForTatAgent(
+            start_with_feed=False, tolerance_defections=2
+        )
 
         # models - separate for each agent
         self.model_a = EaterNet()

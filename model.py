@@ -19,14 +19,15 @@ class PolicyNet(nn.Module):
         n_heads: int = 4,
         n_layers: int = 2,
     ):
-        # input shape: [B, seq_len, 2] - full sequence with attention
+        # input shape: [B, seq_len, 3] - full sequence with attention
+        # 3 channels: [my_action, opponent_action, is_episode_start]
         super().__init__()
         self.seq_len = seq_len
         self.d_model = d_model
         self.n_layers = n_layers
 
-        # Project 2D input (my_action, opponent_action) to d_model dimensions
-        self.input_proj = nn.Linear(2, d_model)
+        # Project 3D input (my_action, opponent_action, is_episode_start) to d_model dimensions
+        self.input_proj = nn.Linear(3, d_model)
 
         # Positional encoding (learned) - initialize with small random values
         self.pos_encoding = mx.random.normal((seq_len, d_model)) * 0.02
@@ -64,10 +65,10 @@ class PolicyNet(nn.Module):
         return policy, logps
 
     def policy(self, obs: mx.array) -> Categorical:
-        # obs: [B, seq_len, 2]
+        # obs: [B, seq_len, 3]
         _B, T, _ = obs.shape
 
-        # Project input to d_model: [B, T, 2] -> [B, T, d_model]
+        # Project input to d_model: [B, T, 3] -> [B, T, d_model]
         x = self.input_proj(obs)
 
         # Add positional encoding
@@ -100,14 +101,15 @@ class ValueNet(nn.Module):
         n_heads: int = 4,
         n_layers: int = 2,
     ):
-        # input shape: [B, seq_len, 2] - full sequence with attention
+        # input shape: [B, seq_len, 3] - full sequence with attention
+        # 3 channels: [my_action, opponent_action, is_episode_start]
         super().__init__()
         self.seq_len = seq_len
         self.d_model = d_model
         self.n_layers = n_layers
 
-        # Project 2D input (my_action, opponent_action) to d_model dimensions
-        self.input_proj = nn.Linear(2, d_model)
+        # Project 3D input (my_action, opponent_action, is_episode_start) to d_model dimensions
+        self.input_proj = nn.Linear(3, d_model)
 
         # Positional encoding (learned) - initialize with small random values
         self.pos_encoding = mx.random.normal((seq_len, d_model)) * 0.02
@@ -136,10 +138,10 @@ class ValueNet(nn.Module):
 
     @override
     def __call__(self, obs: mx.array) -> mx.array:
-        # obs: [B, seq_len, 2]
+        # obs: [B, seq_len, 3]
         _B, T, _ = obs.shape
 
-        # Project input to d_model: [B, T, 2] -> [B, T, d_model]
+        # Project input to d_model: [B, T, 3] -> [B, T, d_model]
         x = self.input_proj(obs)
 
         # Add positional encoding

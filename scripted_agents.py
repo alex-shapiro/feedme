@@ -13,19 +13,34 @@ class TitForTatAgent:
     """
 
     start_with_feed: bool
-    defected: bool
+    defection_count: int
+    tolerance_defections: int
 
-    def __init__(self, start_with_feed: bool = True):
+    def __init__(self, start_with_feed: bool = True, tolerance_defections: int = 2):
+        """
+        Args:
+            start_with_feed: If True, starts by feeding (turn 0 = FeedOther)
+                           If False, starts by opening mouth (turn 0 = OpenMouth)
+            tolerance_defections: Number of defections to tolerate before retaliating
+        """
         self.start_with_feed = start_with_feed
-        self.defected = False  # Track if we've detected defection
+        self.tolerance_defections = tolerance_defections
+        self.defection_count = 0  # Track number of opponent defections
 
     def reset(self):
         """Reset the agent's state for a new episode"""
-        self.defected = False
+        self.defection_count = 0
 
     def step(self, obs: mx.array) -> int:
-        """Select action based on observation history"""
+        """
+        Select action based on observation history.
 
+        Args:
+            obs: Observation array [T, 3] where obs[i] = [my_action, opponent_action, is_episode_start]
+
+        Returns:
+            Action index (0=FeedSelf, 1=FeedOther, 2=OpenMouth)
+        """
         t = count_valid_timesteps(obs)
 
         # First turn: start with cooperation pattern
@@ -45,10 +60,10 @@ class TitForTatAgent:
             last_my_action == Action.OpenMouth.value
             and last_opponent_action != Action.FeedOther.value
         ):
-            self.defected = True
+            self.defection_count += 1
 
-        # If opponent defected, punish by always doing FeedSelf
-        if self.defected:
+        # If opponent defected more than tolerance, punish by always doing FeedSelf
+        if self.defection_count > self.tolerance_defections:
             return Action.FeedSelf.value
 
         # Otherwise, continue tit-for-tat pattern
