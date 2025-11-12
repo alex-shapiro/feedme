@@ -39,16 +39,16 @@ class TitForTatAgent:
         my_action = Action(int(obs[t - 1, 0]))
         opponent_action = Action(int(obs[t - 1, 1]))
 
-        if opponent_action == Action.FeedSelf:
+        if opponent_action == Action.FeedOther:
             # If the opponent did not defect last time, reduce their count
             self.defection_count = max(self.defection_count - 1, 0)
         elif my_action == Action.FeedOther:
             # If the opponent defected last time and I did not, increase their count
             self.defection_count = min(self.defection_count + 1, 2)
 
-        # If opponent defected more than tolerance, punish by always doing FeedSelf
-        if self.defection_count > self.tolerance:
-            return Action.FeedSelf.value
+        # If opponent defected more than tolerance, defect
+        if self.defection_count >= self.tolerance:
+            return Action.OpenMouth.value
 
         if random.random() <= self.randomness:
             return Action.OpenMouth.value

@@ -242,12 +242,12 @@ class FeedMeAgent:
 
     def evaluate(self, n_episodes: int):
         ep_rewards_a = []
-        ep_rewards_b = []
+        # ep_rewards_b = []
         actions_a = [0, 0, 0]
-        actions_b = [0, 0, 0]
+        # actions_b = [0, 0, 0]
         for i in range(n_episodes):
             ra = 0.0
-            rb = 0.0
+            # rb = 0.0
             obs_a, obs_b = self.env.reset()
             done = False
             while not done:
@@ -255,33 +255,30 @@ class FeedMeAgent:
                 obs_a_batch = (
                     mx.expand_dims(obs_a, axis=0) if obs_a.ndim == 2 else obs_a
                 )
-                obs_b_batch = (
-                    mx.expand_dims(obs_b, axis=0) if obs_b.ndim == 2 else obs_b
-                )
                 action_a = int(self.model_a.p_net.policy(obs_a_batch).sample().item())
-                action_b = self.model_b.step(obs_b_batch)
+                action_b = self.model_b.step(obs_b)
                 actions_a[action_a] += 1
-                actions_b[action_b] += 1
+                # actions_b[action_b] += 1
                 (obs_a, obs_b), (reward_a, reward_b), done = self.env.step(
                     action_a, action_b
                 )
                 ra += reward_a
-                rb += reward_b
+                # rb += reward_b
                 if i == 0:
                     print(f"A: {Action(action_a)}, B: {Action(action_b)}")
             ep_rewards_a.append(ra)
-            ep_rewards_b.append(rb)
+            # ep_rewards_b.append(rb)
         ep_rewards_a = mx.array(ep_rewards_a)
-        ep_rewards_b = mx.array(ep_rewards_b)
+        # ep_rewards_b = mx.array(ep_rewards_b)
         print(
             f"Mean A reward: {mx.mean(ep_rewards_a):.3f} +/- {mx.std(ep_rewards_a):.3f}"
         )
-        print(
-            f"Mean B reward: {mx.mean(ep_rewards_b):.3f} +/- {mx.std(ep_rewards_b):.3f}"
-        )
+        # print(
+        #     f"Mean B reward: {mx.mean(ep_rewards_b):.3f} +/- {mx.std(ep_rewards_b):.3f}"
+        # )
         print(f"Mean episode length: {sum(actions_a) / n_episodes:.3f}")
         print(f"A num actions: {actions_a}")
-        print(f"A num actions: {actions_b}")
+        # print(f"A num actions: {actions_b}")
 
     def save_model(self, path: str):
         os.makedirs("checkpoints/", exist_ok=True)
