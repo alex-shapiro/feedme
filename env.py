@@ -84,6 +84,6 @@ class FeedMeEnv:
             case Action.FeedSelf:
                 return 1
             case Action.FeedOther:
-                return 0
+                return 2 if b == Action.FeedOther else 0
             case Action.OpenMouth:
-                return 10 if b == Action.FeedOther else 0
+                return 2 if b == Action.FeedOther else 0
