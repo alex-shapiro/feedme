@@ -23,7 +23,7 @@ class Action(Enum):
 
 @final
 class FeedMeEnv:
-    def __init__(self, max_steps: int = 200, termination_prob: float = 0.01):
+    def __init__(self, max_steps: int = 40, termination_prob: float = 0.04):
         """
         Args:
             max_steps: Maximum episode length
@@ -41,7 +41,11 @@ class FeedMeEnv:
 
     def reset(self) -> tuple[mx.array, mx.array]:
         self.t = 0
-        self.obs = mx.zeros([self.max_steps, 2], dtype=mx.float32) - 1.0
+        # Observation: [max_steps, 3] = [my_action, opponent_action, is_episode_start]
+        self.obs = mx.zeros([self.max_steps, 3], dtype=mx.float32) - 1.0
+
+        # Mark first timestep as episode start
+        self.obs[0, 2] = 1.0
 
         # Get hidden termination step by sampling from geometric distribution
         # E[T] = 1/termination_prob
@@ -52,8 +56,10 @@ class FeedMeEnv:
         return self.observation()
 
     def observation(self) -> tuple[mx.array, mx.array]:
+        # Agent A sees: [my_action, opponent_action, is_episode_start]
         a = self.obs
-        b = self.obs[:, [1, 0]]
+        # Agent B sees swapped actions: [opponent_action, my_action, is_episode_start]
+        b = mx.concatenate([self.obs[:, [1, 0]], self.obs[:, [2]]], axis=1)
         return a, b
 
     def step(
@@ -84,6 +90,6 @@ class FeedMeEnv:
             case Action.FeedSelf:
                 return 1
             case Action.FeedOther:
-                return 0
+                return 10 if b == Action.FeedOther else 0
             case Action.OpenMouth:
                 return 10 if b == Action.FeedOther else 0
