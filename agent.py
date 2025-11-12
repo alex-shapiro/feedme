@@ -30,6 +30,7 @@ class FeedMeAgent:
         entropy_coef: float = 0.05,
         initial_entropy_coef: float = 0.1,
         entropy_coef_decay: float = 0.999,
+        retention_percentage: float = 0.3,
     ):
         super().__init__()
 
@@ -44,6 +45,7 @@ class FeedMeAgent:
         self.entropy_coef_decay = entropy_coef_decay
         self.current_entropy_coef = initial_entropy_coef
         self.trained_epochs = 0
+        self.retention_percentage = retention_percentage
 
         # simulation env
         self.env = FeedMeEnv()
@@ -72,6 +74,10 @@ class FeedMeAgent:
             lamda=lamda,
         )
 
+        # retained observations from previous epoch for curriculum learning
+        self.retained_obs_a: list[mx.array] = []
+        self.retained_obs_b: list[mx.array] = []
+
     def train(self):
         for epoch in range(self.trained_epochs + 1, self.n_epochs + 1):
             print(f"\nEpoch {epoch} (entropy_coef={self.current_entropy_coef:.4f})")
@@ -79,6 +85,8 @@ class FeedMeAgent:
             # build rollouts
             (obs_a, obs_b) = self.env.reset()
             final_step = self.n_steps_per_epoch - 1
+            retained_idx = 0  # Index for cycling through retained observations
+
             for t in range(self.n_steps_per_epoch):
                 action_a, logp_a, value_a = self.model_a.step(obs_a)
                 action_b, logp_b, value_b = self.model_b.step(obs_b)
@@ -108,7 +116,20 @@ class FeedMeAgent:
                     value_b = self.model_b.value(obs_b) if truncated else 0.0
                     self.trajectories_a.push_episode_end(value_a, truncated=truncated)
                     self.trajectories_b.push_episode_end(value_b, truncated=truncated)
-                    obs_a, obs_b = self.env.reset()
+
+                    # Reset: use retained observations if available, otherwise normal reset
+                    if (
+                        self.retained_obs_a
+                        and self.retained_obs_b
+                        and retained_idx < len(self.retained_obs_a)
+                    ):
+                        obs_a, obs_b = self.env.reset(
+                            initial_obs_a=self.retained_obs_a[retained_idx],
+                            initial_obs_b=self.retained_obs_b[retained_idx],
+                        )
+                        retained_idx += 1
+                    else:
+                        obs_a, obs_b = self.env.reset()
 
             self.update()
 
@@ -189,6 +210,26 @@ class FeedMeAgent:
             f"B Value loss: {mx.mean(value_losses_b):.3f} +/- {mx.std(value_losses_b):.3f}"
         )
 
+        # Retain high-loss observations for next epoch
+        retained_batch_a = self.select_high_loss_observations(batch_a, self.model_a)
+        retained_batch_b = self.select_high_loss_observations(batch_b, self.model_b)
+
+        if retained_batch_a is not None:
+            self.retained_obs_a = [
+                retained_batch_a.obs[i] for i in range(len(retained_batch_a.obs))
+            ]
+            print(f"A: Retained {len(self.retained_obs_a)} high-loss observations")
+        else:
+            self.retained_obs_a = []
+
+        if retained_batch_b is not None:
+            self.retained_obs_b = [
+                retained_batch_b.obs[i] for i in range(len(retained_batch_b.obs))
+            ]
+            print(f"B: Retained {len(self.retained_obs_b)} high-loss observations")
+        else:
+            self.retained_obs_b = []
+
     def compute_policy_loss_and_grads(
         self, batch: TrajectoryBatch, model: EaterNet
     ) -> tuple[mx.array, "PolicyInfo", Gradients]:
@@ -237,6 +278,47 @@ class FeedMeAgent:
     def value_loss(self, batch: TrajectoryBatch, model: EaterNet) -> mx.array:
         values = model.v_net(batch.obs)
         return mx.mean((values - batch.returns) ** 2)
+
+    def select_high_loss_observations(
+        self, batch: TrajectoryBatch, model: EaterNet
+    ) -> TrajectoryBatch | None:
+        """Select top retention_percentage observations with highest value loss above average."""
+        values = model.v_net(batch.obs)
+        per_obs_losses = (values - batch.returns) ** 2
+
+        mean_loss = mx.mean(per_obs_losses)
+
+        # Filter to only above-average losses
+        above_avg_mask = per_obs_losses > mean_loss
+        above_avg_indices = mx.argwhere(above_avg_mask).squeeze()
+
+        # If no observations above average, return None
+        if above_avg_indices.size == 0:
+            return None
+
+        # Get losses for above-average observations
+        above_avg_losses = per_obs_losses[above_avg_indices]
+
+        # Calculate how many to retain
+        n_to_retain = int(len(batch.obs) * self.retention_percentage)
+        n_above_avg = len(above_avg_indices)
+        n_to_select = min(n_to_retain, n_above_avg)
+
+        if n_to_select == 0:
+            return None
+
+        # Sort by loss (descending) and take top n_to_select
+        sorted_indices = mx.argsort(-above_avg_losses)[:n_to_select]
+        selected_indices = above_avg_indices[sorted_indices]
+
+        # Return a new batch with only the selected observations
+        return TrajectoryBatch(
+            obs=batch.obs[selected_indices],
+            actions=batch.actions[selected_indices],
+            advantages=batch.advantages[selected_indices],
+            logps=batch.logps[selected_indices],
+            returns=batch.returns[selected_indices],
+        )
 
     def evaluate(self, n_episodes: int):
         ep_rewards_a = []

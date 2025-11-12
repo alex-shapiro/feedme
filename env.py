@@ -39,13 +39,40 @@ class FeedMeEnv:
     def action_space_n(self) -> int:
         return len(Action)
 
-    def reset(self) -> tuple[mx.array, mx.array]:
-        self.t = 0
-        # Observation: [max_steps, 3] = [my_action, opponent_action, is_episode_start]
-        self.obs = mx.zeros([self.max_steps, 3], dtype=mx.float32) - 1.0
+    def reset(
+        self,
+        initial_obs_a: mx.array | None = None,
+        initial_obs_b: mx.array | None = None,
+    ) -> tuple[mx.array, mx.array]:
+        """
+        Reset the environment. If initial_obs is provided, start from that state.
 
-        # Mark first timestep as episode start
-        self.obs[0, 2] = 1.0
+        Args:
+            initial_obs_a: Optional initial observation for agent A to resume from
+            initial_obs_b: Optional initial observation for agent B to resume from
+        """
+        self.t = 0
+
+        if initial_obs_a is not None and initial_obs_b is not None:
+            # Start from a retained observation (in media res)
+            self.obs = initial_obs_a.copy()
+            # Find the current timestep from the observation
+            # Count non-empty actions (those >= 0)
+            for i in range(self.max_steps):
+                if self.obs[i, 0] < 0:
+                    self.t = i
+                    break
+            else:
+                self.t = self.max_steps
+            # Mark this as an episode start even though we're in media res
+            if self.t < self.max_steps:
+                self.obs[self.t, 2] = 1.0
+        else:
+            # Standard reset
+            # Observation: [max_steps, 3] = [my_action, opponent_action, is_episode_start]
+            self.obs = mx.zeros([self.max_steps, 3], dtype=mx.float32) - 1.0
+            # Mark first timestep as episode start
+            self.obs[0, 2] = 1.0
 
         # Get hidden termination step by sampling from geometric distribution
         # E[T] = 1/termination_prob
