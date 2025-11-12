@@ -27,9 +27,9 @@ class FeedMeAgent:
         policy_lr: float = 1e-3,
         value_lr: float = 1e-3,
         target_kl: float = 0.5,
-        entropy_coef: float = 0.01,
+        entropy_coef: float = 0.05,
         initial_entropy_coef: float = 0.1,
-        entropy_coef_decay: float = 0.995,
+        entropy_coef_decay: float = 0.999,
     ):
         super().__init__()
 
