@@ -23,7 +23,7 @@ class Action(Enum):
 
 @final
 class FeedMeEnv:
-    def __init__(self, max_steps: int = 200, termination_prob: float = 0.04):
+    def __init__(self, max_steps: int = 40, termination_prob: float = 0.04):
         """
         Args:
             max_steps: Maximum episode length
@@ -40,10 +40,6 @@ class FeedMeEnv:
         return len(Action)
 
     def reset(self) -> tuple[mx.array, mx.array]:
-        # Mark current timestep as episode start
-        if hasattr(self, "obs"):
-            self.obs[self.t, 2] = 1.0
-
         self.t = 0
         # Observation: [max_steps, 3] = [my_action, opponent_action, is_episode_start]
         self.obs = mx.zeros([self.max_steps, 3], dtype=mx.float32) - 1.0
@@ -94,6 +90,6 @@ class FeedMeEnv:
             case Action.FeedSelf:
                 return 1
             case Action.FeedOther:
-                return 2 if b == Action.FeedOther else 0
+                return 10 if b == Action.FeedOther else 0
             case Action.OpenMouth:
-                return 2 if b == Action.FeedOther else 0
+                return 10 if b == Action.FeedOther else 0
