@@ -111,10 +111,14 @@ class PolicyNet(nn.Module):
         # Apply RoPE (Rotary Position Embedding)
         x = apply_rope(x)
 
+        # Create causal mask: [T, T] where mask[i,j] = -inf if j > i, else 0
+        # This prevents attending to future positions
+        causal_mask = mx.triu(mx.full((T, T), -1e9, dtype=mx.float32), k=1)
+
         # Apply transformer layers
         for i in range(self.n_layers):
-            # Self-attention with residual
-            attn_out = self.attentions[i](x, x, x)
+            # Self-attention with causal mask
+            attn_out = self.attentions[i](x, x, x, mask=causal_mask)
             x = self.ln1s[i](x + attn_out)
 
             # Feedforward with residual
@@ -177,10 +181,14 @@ class ValueNet(nn.Module):
         # Apply RoPE (Rotary Position Embedding)
         x = apply_rope(x)
 
+        # Create causal mask: [T, T] where mask[i,j] = -inf if j > i, else 0
+        # This prevents attending to future positions
+        causal_mask = mx.triu(mx.full((T, T), -1e9, dtype=mx.float32), k=1)
+
         # Apply transformer layers
         for i in range(self.n_layers):
-            # Self-attention with residual
-            attn_out = self.attentions[i](x, x, x)
+            # Self-attention with causal mask
+            attn_out = self.attentions[i](x, x, x, mask=causal_mask)
             x = self.ln1s[i](x + attn_out)
 
             # Feedforward with residual
