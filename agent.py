@@ -8,6 +8,7 @@ from mlx.optimizers import AdamW
 
 from env import Action, FeedMeEnv
 from model import EaterNet
+from teacher import TitForTatAgent
 from trajectory_buffer import TrajectoryBatch, TrajectoryBuffer
 
 type Gradients = dict[str, Any]
@@ -50,13 +51,13 @@ class FeedMeAgent:
 
         # separate models for agent A and agent B
         self.model_a = EaterNet()
-        self.model_b = EaterNet()
+        self.model_b = TitForTatAgent()
 
         # separate optimizers for each agent
         self.policy_optimizer_a = AdamW(learning_rate=policy_lr)
         self.value_optimizer_a = AdamW(learning_rate=value_lr)
-        self.policy_optimizer_b = AdamW(learning_rate=policy_lr)
-        self.value_optimizer_b = AdamW(learning_rate=value_lr)
+        # self.policy_optimizer_b = AdamW(learning_rate=policy_lr)
+        # self.value_optimizer_b = AdamW(learning_rate=value_lr)
 
         # trajectory buffer
         self.trajectories_a = TrajectoryBuffer(
@@ -81,7 +82,7 @@ class FeedMeAgent:
             final_step = self.n_steps_per_epoch - 1
             for t in range(self.n_steps_per_epoch):
                 action_a, logp_a, value_a = self.model_a.step(obs_a)
-                action_b, logp_b, value_b = self.model_b.step(obs_b)
+                action_b = self.model_b.step(obs_b)
                 (next_obs_a, next_obs_b), (reward_a, reward_b), done = self.env.step(
                     action_a,
                     action_b,
@@ -93,22 +94,23 @@ class FeedMeAgent:
                     value=value_a,
                     reward=reward_a,
                 )
-                self.trajectories_b.push(
-                    obs=obs_b,
-                    action=action_b,
-                    logp=logp_b,
-                    value=value_b,
-                    reward=reward_b,
-                )
+                # self.trajectories_b.push(
+                #     obs=obs_b,
+                #     action=action_b,
+                #     logp=logp_b,
+                #     value=value_b,
+                #     reward=reward_b,
+                # )
                 obs_a = next_obs_a
-                obs_b = next_obs_b
+                # obs_b = next_obs_b
                 truncated = t == final_step
                 if done or truncated:
                     value_a = self.model_a.value(obs_a) if truncated else 0.0
-                    value_b = self.model_b.value(obs_b) if truncated else 0.0
+                    # value_b = self.model_b.value(obs_b) if truncated else 0.0
                     self.trajectories_a.push_episode_end(value_a, truncated=truncated)
-                    self.trajectories_b.push_episode_end(value_b, truncated=truncated)
+                    # self.trajectories_b.push_episode_end(value_b, truncated=truncated)
                     obs_a, obs_b = self.env.reset()
+                    self.model_b.reset()
 
             self.update()
 
@@ -123,7 +125,7 @@ class FeedMeAgent:
 
     def update(self):
         batch_a = self.trajectories_a.get_batch()
-        batch_b = self.trajectories_b.get_batch()
+        # batch_b = self.trajectories_b.get_batch()
 
         # Train agent A
         policy_losses_a = []
@@ -149,32 +151,32 @@ class FeedMeAgent:
             value_losses_a.append(value_loss)
 
         # Train agent B
-        policy_losses_b = []
-        value_losses_b = []
+        # policy_losses_b = []
+        # value_losses_b = []
 
-        for i in range(self.n_policy_training_iters):
-            policy_loss, policy_info, grads = self.compute_policy_loss_and_grads(
-                batch_b, self.model_b
-            )
-            policy_losses_b.append(policy_loss)
-            self.policy_optimizer_b.update(self.model_b.p_net, grads)
-            mx.eval(self.model_b.p_net.parameters())
-            if policy_info.approximate_kl > 1.5 * self.target_kl:
-                print(
-                    f"B: stopping early at iter {i} for reaching max KL (value ~{policy_info.approximate_kl:.4f})"
-                )
-                break
+        # for i in range(self.n_policy_training_iters):
+        #     policy_loss, policy_info, grads = self.compute_policy_loss_and_grads(
+        #         batch_b, self.model_b
+        #     )
+        #     policy_losses_b.append(policy_loss)
+        #     self.policy_optimizer_b.update(self.model_b.p_net, grads)
+        #     mx.eval(self.model_b.p_net.parameters())
+        #     if policy_info.approximate_kl > 1.5 * self.target_kl:
+        #         print(
+        #             f"B: stopping early at iter {i} for reaching max KL (value ~{policy_info.approximate_kl:.4f})"
+        #         )
+        #         break
 
-        for i in range(self.n_value_training_iters):
-            value_loss, grads = self.compute_value_loss_and_grads(batch_b, self.model_b)
-            self.value_optimizer_b.update(self.model_b.v_net, grads)
-            mx.eval(self.model_b.v_net.parameters())
-            value_losses_b.append(value_loss)
+        # for i in range(self.n_value_training_iters):
+        #     value_loss, grads = self.compute_value_loss_and_grads(batch_b, self.model_b)
+        #     self.value_optimizer_b.update(self.model_b.v_net, grads)
+        #     mx.eval(self.model_b.v_net.parameters())
+        #     value_losses_b.append(value_loss)
 
         policy_losses_a = mx.array(policy_losses_a)
         value_losses_a = mx.array(value_losses_a)
-        policy_losses_b = mx.array(policy_losses_b)
-        value_losses_b = mx.array(value_losses_b)
+        # policy_losses_b = mx.array(policy_losses_b)
+        # value_losses_b = mx.array(value_losses_b)
 
         print(
             f"A Policy loss: {mx.mean(policy_losses_a):.3f} +/- {mx.std(policy_losses_a):.3f}"
@@ -182,12 +184,12 @@ class FeedMeAgent:
         print(
             f"A Value loss: {mx.mean(value_losses_a):.3f} +/- {mx.std(value_losses_a):.3f}"
         )
-        print(
-            f"B Policy loss: {mx.mean(policy_losses_b):.3f} +/- {mx.std(policy_losses_b):.3f}"
-        )
-        print(
-            f"B Value loss: {mx.mean(value_losses_b):.3f} +/- {mx.std(value_losses_b):.3f}"
-        )
+        # print(
+        #     f"B Policy loss: {mx.mean(policy_losses_b):.3f} +/- {mx.std(policy_losses_b):.3f}"
+        # )
+        # print(
+        #     f"B Value loss: {mx.mean(value_losses_b):.3f} +/- {mx.std(value_losses_b):.3f}"
+        # )
 
     def compute_policy_loss_and_grads(
         self, batch: TrajectoryBatch, model: EaterNet
@@ -257,7 +259,7 @@ class FeedMeAgent:
                     mx.expand_dims(obs_b, axis=0) if obs_b.ndim == 2 else obs_b
                 )
                 action_a = int(self.model_a.p_net.policy(obs_a_batch).sample().item())
-                action_b = int(self.model_b.p_net.policy(obs_b_batch).sample().item())
+                action_b = self.model_b.step(obs_b_batch)
                 actions_a[action_a] += 1
                 actions_b[action_b] += 1
                 (obs_a, obs_b), (reward_a, reward_b), done = self.env.step(
@@ -290,14 +292,14 @@ class FeedMeAgent:
                 "p_net": dict(self.model_a.p_net.parameters()),
                 "v_net": dict(self.model_a.v_net.parameters()),
             },
-            "model_b_state": {
-                "p_net": dict(self.model_b.p_net.parameters()),
-                "v_net": dict(self.model_b.v_net.parameters()),
-            },
+            # "model_b_state": {
+            #     "p_net": dict(self.model_b.p_net.parameters()),
+            #     "v_net": dict(self.model_b.v_net.parameters()),
+            # },
             "policy_optimizer_a_state": self.policy_optimizer_a.state,
             "value_optimizer_a_state": self.value_optimizer_a.state,
-            "policy_optimizer_b_state": self.policy_optimizer_b.state,
-            "value_optimizer_b_state": self.value_optimizer_b.state,
+            # "policy_optimizer_b_state": self.policy_optimizer_b.state,
+            # "value_optimizer_b_state": self.value_optimizer_b.state,
         }
 
         with open(path, "wb") as f:
@@ -311,14 +313,14 @@ class FeedMeAgent:
         # Load model parameters for both agents
         self.model_a.p_net.update(checkpoint["model_a_state"]["p_net"])
         self.model_a.v_net.update(checkpoint["model_a_state"]["v_net"])
-        self.model_b.p_net.update(checkpoint["model_b_state"]["p_net"])
-        self.model_b.v_net.update(checkpoint["model_b_state"]["v_net"])
+        # self.model_b.p_net.update(checkpoint["model_b_state"]["p_net"])
+        # self.model_b.v_net.update(checkpoint["model_b_state"]["v_net"])
 
         # Load optimizer states for both agents
         self.policy_optimizer_a.state = checkpoint["policy_optimizer_a_state"]
         self.value_optimizer_a.state = checkpoint["value_optimizer_a_state"]
-        self.policy_optimizer_b.state = checkpoint["policy_optimizer_b_state"]
-        self.value_optimizer_b.state = checkpoint["value_optimizer_b_state"]
+        # self.policy_optimizer_b.state = checkpoint["policy_optimizer_b_state"]
+        # self.value_optimizer_b.state = checkpoint["value_optimizer_b_state"]
 
         print(f"Model loaded from {path}")
 
